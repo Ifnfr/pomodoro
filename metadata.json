@@ -1,0 +1,6 @@
+{
+  "name": "Focus Popup",
+  "description": "Minimalist Windows-style Pomodoro timer and study tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
