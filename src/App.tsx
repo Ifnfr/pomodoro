@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Timer } from './components/Timer';
 import { Analytics } from './components/Analytics';
 import { cn } from './lib/utils';
-import { initAuth, googleSignIn, logout } from './lib/auth';
+import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
 import { Palette } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
 
 type View = 'timer' | 'analytics';
 
@@ -34,16 +35,10 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const unsubscribe = initAuth(
-        (u) => {
-          setUser(u);
-          setNeedsAuth(false);
-        },
-        () => {
-          setUser(null);
-          setNeedsAuth(true);
-        }
-      );
+      const unsubscribe = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        setNeedsAuth(false);
+      });
       return () => unsubscribe();
     } catch (e) {
       console.warn("Auth initialization failed. Check config.", e);
@@ -52,11 +47,7 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      const result = await googleSignIn();
-      if (result) {
-        setUser(result.user);
-        setNeedsAuth(false);
-      }
+      await loginWithGoogle();
     } catch (err) {
       console.error('Login failed:', err);
     }

@@ -1,4 +1,4 @@
-import { getAccessToken } from './auth';
+import { getAccessToken } from './firebase';
 
 export async function addEventToCalendar(title: string, durationMinutes: number, startTimeMs: number) {
   const token = await getAccessToken();

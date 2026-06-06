@@ -1,11 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { getSessions } from '../lib/storage';
+import React, { useMemo, useState, useEffect } from 'react';
+import { getSessions, subscribeToSessions } from '../lib/storage';
 import { startOfDay, startOfWeek, startOfMonth, getIsoDate, cn } from '../lib/utils';
 import { Session } from '../types';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, YAxis, CartesianGrid } from 'recharts';
 
 export function Analytics() {
-  const sessions = useMemo(() => getSessions(), []);
+  const [sessions, setSessions] = useState<Session[]>(getSessions());
+  
+  useEffect(() => {
+    const unsubscribe = subscribeToSessions((newSessions) => {
+        setSessions(newSessions);
+    });
+    return () => unsubscribe();
+  }, []);
   const [viewMode, setViewMode] = useState<'heatmap' | 'chart'>('heatmap');
 
   const stats = useMemo(() => {
