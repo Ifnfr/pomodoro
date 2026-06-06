@@ -4,6 +4,7 @@ import { Mode } from '../types';
 import { addSession } from '../lib/storage';
 import { cn } from '../lib/utils';
 import { playChime } from '../lib/audio';
+import { addEventToCalendar } from '../lib/calendar';
 
 const MODE_DURATIONS: Record<Mode, number> = {
   pomodoro: 25 * 60,
@@ -53,6 +54,13 @@ export function Timer() {
           durationMinutes: MODE_DURATIONS.pomodoro / 60,
           mode: 'pomodoro',
         });
+        
+        // Sync to calendar
+        addEventToCalendar(
+          'Deep Work Session (Pomodoro)', 
+          MODE_DURATIONS.pomodoro / 60,
+          startTimeRef.current || Date.now()
+        );
       }
 
       // Auto-switch mode or just wait for user
