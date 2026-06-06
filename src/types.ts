@@ -5,6 +5,7 @@ export interface Session {
   timestamp: number; // Unix timestamp in MS
   durationMinutes: number;
   mode: Mode;
+  topic?: string;
 }
 
 export interface DailyStat {
