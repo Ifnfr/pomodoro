@@ -5,7 +5,7 @@ import { cn } from './lib/utils';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
 import { Palette } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 
 type View = 'timer' | 'analytics';
 
@@ -35,6 +35,9 @@ export default function App() {
 
   useEffect(() => {
     try {
+      getRedirectResult(auth).catch(e => {
+        console.error("Redirect error: ", e);
+      });
       const unsubscribe = onAuthStateChanged(auth, (u) => {
         setUser(u);
         setNeedsAuth(false);
@@ -48,7 +51,7 @@ export default function App() {
   const handleLogin = async () => {
     try {
       await loginWithGoogle();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login failed:', err);
     }
   };
