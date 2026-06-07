@@ -25,6 +25,14 @@ export function startOfMonth(date: Date): Date {
   return newDate;
 }
 
+export function endOfMonth(date: Date): Date {
+  const newDate = startOfDay(date);
+  newDate.setMonth(newDate.getMonth() + 1);
+  newDate.setDate(0);
+  newDate.setHours(23, 59, 59, 999);
+  return newDate;
+}
+
 export function cn(...classes: (string | undefined | null | false)[]): string {
   return classes.filter(Boolean).join(' ');
 }

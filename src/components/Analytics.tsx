@@ -3,6 +3,7 @@ import { getSessions, subscribeToSessions } from '../lib/storage';
 import { startOfDay, startOfWeek, startOfMonth, getIsoDate, cn } from '../lib/utils';
 import { Session } from '../types';
 import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, YAxis, CartesianGrid } from 'recharts';
+import { CalendarView } from './CalendarView';
 
 export function Analytics() {
   const [sessions, setSessions] = useState<Session[]>(getSessions());
@@ -13,7 +14,7 @@ export function Analytics() {
     });
     return () => unsubscribe();
   }, []);
-  const [viewMode, setViewMode] = useState<'heatmap' | 'chart'>('heatmap');
+  const [viewMode, setViewMode] = useState<'heatmap' | 'chart' | 'calendar'>('calendar');
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -94,17 +95,66 @@ export function Analytics() {
       <h2 className="text-sm font-semibold uppercase tracking-widest opacity-50 mb-6 shrink-0">Productivity Insights</h2>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8 shrink-0">
+      <div className="grid grid-cols-3 gap-4 mb-6 shrink-0">
         <StatCard title="Today" value={stats.todayMinutes} unit="m" />
         <StatCard title="This Week" value={stats.weekMinutes} unit="m" />
         <StatCard title="This Month" value={stats.monthMinutes} unit="m" />
       </div>
 
-      <div className="flex-1 w-full flex flex-col min-h-0 overflow-y-auto scrollbar-hide">
+      <div className="flex-1 w-full flex flex-col min-h-0 overflow-y-auto scrollbar-hide pb-8">
+        {/* Topic Breakdown */}
+        <div className="mb-8 shrink-0">
+          <h3 className="text-xs font-semibold uppercase tracking-widest opacity-50 mb-4">Focus Topics</h3>
+          <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+            {topicData.length > 0 ? (
+              <div className="space-y-3">
+                {topicData.map((item) => {
+                  const percentage = (item.minutes / totalTopicMins) * 100;
+                  
+                  const hours = Math.floor(item.minutes / 60);
+                  const mins = item.minutes % 60;
+                  let displayTime = '';
+                  if (hours > 0 && mins > 0) displayTime = `${hours}h ${mins}m`;
+                  else if (hours > 0) displayTime = `${hours}h`;
+                  else displayTime = `${mins}m`;
+
+                  return (
+                    <div key={item.topic} className="flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="font-medium">{item.topic}</span>
+                        <span className="opacity-60 text-xs">{displayTime}</span>
+                      </div>
+                      <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-blue-500 h-full rounded-full transition-all" 
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center text-sm text-white/40 py-2">
+                No focus sessions recorded yet. Add a focus topic on the timer!
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between mb-4 shrink-0">
           <h3 className="text-xs font-semibold uppercase tracking-widest opacity-50">Activity Map</h3>
           
           <div className="flex items-center bg-white/5 rounded-full p-1 border border-white/5">
+            <button
+              onClick={() => setViewMode('calendar')}
+              className={cn(
+                "text-[10px] uppercase tracking-wider px-3 py-1 rounded-full transition-colors",
+                viewMode === 'calendar' ? "bg-white/10 text-white font-medium" : "text-white/50 hover:text-white"
+              )}
+            >
+              Calendar
+            </button>
             <button
               onClick={() => setViewMode('heatmap')}
               className={cn(
@@ -126,7 +176,9 @@ export function Analytics() {
           </div>
         </div>
         
-        {viewMode === 'heatmap' ? (
+        {viewMode === 'calendar' ? (
+          <CalendarView />
+        ) : viewMode === 'heatmap' ? (
           <div className="bg-white/5 p-4 rounded-xl border border-white/5 flex flex-col overflow-x-auto scrollbar-hide py-6 mb-4">
             <div className="grid grid-flow-col grid-rows-7 gap-[3px] w-max">
               {heatmapDays.map((day) => {
@@ -180,37 +232,6 @@ export function Analytics() {
               </BarChart>
             </ResponsiveContainer>
             <div className="text-[10px] opacity-30 mt-2 text-right">Last 14 Days</div>
-          </div>
-        )}
-
-        {/* Topic Breakdown */}
-        {topicData.length > 0 && (
-          <div className="mt-4 shrink-0">
-            <h3 className="text-xs font-semibold uppercase tracking-widest opacity-50 mb-4">Focus Topics</h3>
-            <div className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5">
-              {topicData.map((item) => {
-                const percentage = (item.minutes / totalTopicMins) * 100;
-                
-                const hours = Math.floor(item.minutes / 60);
-                const mins = item.minutes % 60;
-                const displayTime = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-
-                return (
-                  <div key={item.topic} className="flex flex-col gap-1.5">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="font-medium">{item.topic}</span>
-                      <span className="opacity-60 text-xs">{displayTime}</span>
-                    </div>
-                    <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="bg-blue-500 h-full rounded-full transition-all" 
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
       </div>

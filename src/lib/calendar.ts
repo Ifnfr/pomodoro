@@ -37,3 +37,34 @@ export async function addEventToCalendar(title: string, durationMinutes: number,
     console.error('Error creating calendar event', error);
   }
 }
+
+export async function fetchStudyEvents(timeMin: Date, timeMax: Date) {
+  const token = await getAccessToken();
+  if (!token) return [];
+
+  try {
+    const url = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+    url.searchParams.append('timeMin', timeMin.toISOString());
+    url.searchParams.append('timeMax', timeMax.toISOString());
+    url.searchParams.append('singleEvents', 'true');
+    // Searching for focus app syncs or anything we define as "study"
+    url.searchParams.append('q', 'Focus Popup app'); 
+
+    const res = await fetch(url.toString(), {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      console.error('Failed to fetch calendar events', await res.text());
+      return [];
+    }
+
+    const data = await res.json();
+    return data.items || [];
+  } catch (error) {
+    console.error('Error fetching calendar events', error);
+    return [];
+  }
+}
