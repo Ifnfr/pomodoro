@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3 } from 'lucide-react';
+import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3, Square } from 'lucide-react';
 import { Mode, Session } from '../types';
 import { addSession, getSessions, subscribeToSessions } from '../lib/storage';
 import { cn, getIsoDate } from '../lib/utils';
@@ -125,6 +125,33 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
     setIsActive(false);
     setMode(newMode);
     setTimeLeft(MODE_DURATIONS[newMode]);
+  };
+
+  const handleStop = () => {
+    if (!isActive) return;
+    setIsActive(false);
+
+    const timeSpentSeconds = MODE_DURATIONS[mode] - timeLeft;
+    if (timeSpentSeconds > 0 && mode === 'pomodoro') {
+      const durationMinutes = timeSpentSeconds / 60;
+      addSession({
+        id: crypto.randomUUID(),
+        timestamp: startTimeRef.current || Date.now(),
+        durationMinutes: durationMinutes,
+        mode: 'pomodoro',
+        topic: topic.trim() || undefined,
+      });
+
+      // Sync to calendar
+      addEventToCalendar(
+        topic.trim() ? `Focus: ${topic.trim()}` : `Deep Work Session (Pomodoro)`,
+        Math.max(1, Math.round(durationMinutes)),
+        startTimeRef.current || Date.now()
+      );
+    }
+
+    setTimeLeft(MODE_DURATIONS[mode]);
+    startTimeRef.current = null;
   };
 
   const handleSaveGoal = () => {
@@ -347,13 +374,11 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   
           {isActive && (
             <button
-              onClick={() => {
-                setTimeLeft(2); // fast forward
-              }}
-              className="px-4 py-3 bg-white/5 hover:bg-white/10 text-white/50 rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"
-              title="Skip to end (Testing)"
+              onClick={handleStop}
+              className="px-8 py-3 bg-white/5 hover:bg-red-500/20 text-white/80 hover:text-red-400 rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"
+              title="Stop and save session"
             >
-               <span className="text-xs tracking-wider">SKIP</span>
+               <Square size={16} className="fill-current" /> <span className="text-sm">Stop</span>
             </button>
           )}
 
