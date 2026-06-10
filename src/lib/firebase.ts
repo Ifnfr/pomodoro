@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithRedirect, signOut, getRedirectResult } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -15,14 +15,25 @@ export const loginWithGoogle = async () => {
     provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
     
     try {
-        const result = await signInWithPopup(auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-            setCachedAccessToken(credential.accessToken);
+        await signInWithRedirect(auth, provider);
+    } catch (error) {
+        console.error('Sign in error:', error);
+        throw error;
+    }
+};
+
+export const checkRedirectResult = async () => {
+    try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            if (credential?.accessToken) {
+                setCachedAccessToken(credential.accessToken);
+            }
         }
         return result;
     } catch (error) {
-        console.error('Sign in error:', error);
+        console.error('Redirect result error:', error);
         throw error;
     }
 };

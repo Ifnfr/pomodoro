@@ -4,7 +4,7 @@ import { Analytics } from './components/Analytics';
 import { Todos } from './components/Todos';
 import { Settings } from './components/Settings';
 import { cn } from './lib/utils';
-import { auth, loginWithGoogle, logout } from './lib/firebase';
+import { auth, loginWithGoogle, logout, checkRedirectResult } from './lib/firebase';
 import type { User } from 'firebase/auth';
 import { Palette, Volume2, VolumeX, Settings as SettingsIcon, CheckSquare, PictureInPicture } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
@@ -116,6 +116,7 @@ export default function App() {
 
   useEffect(() => {
     try {
+      checkRedirectResult().catch((e) => console.error("Redirect check failed", e));
       const unsubscribe = onAuthStateChanged(auth, (u) => {
         setUser(u);
         setNeedsAuth(false);
