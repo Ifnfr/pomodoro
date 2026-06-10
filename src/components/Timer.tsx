@@ -94,50 +94,32 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   useEffect(() => {
     let interval: NodeJS.Timeout;
 
-    if (isActive && timeLeft > 0) {
+    if (isActive) {
       interval = setInterval(() => {
         setTimeLeft((time) => time - 1);
       }, 1000);
-    } else if (isActive && timeLeft === 0) {
-      // Timer finished
-      setIsActive(false);
-      
+    }
+
+    return () => clearInterval(interval);
+  }, [isActive]);
+
+  const hasPlayedAlarmRef = useRef(false);
+  useEffect(() => {
+    if (isActive && timeLeft === 0 && !hasPlayedAlarmRef.current) {
+      hasPlayedAlarmRef.current = true;
       if (soundEnabled) {
         playChime();
       }
 
       if (mode === 'pomodoro') {
-        sendNotification('Pomodoro Completed!', 'Great job focusing. Time to take a break.');
+        sendNotification('Pomodoro Completed!', 'Great job focusing. Time to take a break or keep going.');
       } else {
-        sendNotification('Break Finished!', 'Time to get back to work.');
+        sendNotification('Break Finished!', 'Time to get back to work or rest more.');
       }
-
-      // Save session if it was a work session
-      if (mode === 'pomodoro') {
-        addSession({
-          id: crypto.randomUUID(),
-          timestamp: startTimeRef.current || Date.now(),
-          durationMinutes: pomodoroDuration,
-          mode: 'pomodoro',
-          ...(topic.trim() ? { topic: topic.trim() } : {}),
-        });
-        
-        // Sync to calendar
-        addEventToCalendar(
-          'Deep Work Session (Pomodoro)', 
-          pomodoroDuration,
-          startTimeRef.current || Date.now()
-        );
-      }
-
-      // Auto-switch mode or just wait for user
-      const nextMode = mode === 'pomodoro' ? 'shortBreak' : 'pomodoro';
-      setMode(nextMode);
-      setTimeLeft(getDuration(nextMode));
+    } else if (!isActive || timeLeft > 0) {
+      hasPlayedAlarmRef.current = false;
     }
-
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, soundEnabled, topic, pomodoroDuration]);
+  }, [isActive, timeLeft, mode, soundEnabled]);
 
   const toggleTimer = () => {
     if (!isActive) {
@@ -191,7 +173,16 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
       );
     }
 
-    setTimeLeft(getDuration(mode));
+    if (timeLeft <= 0) {
+      // Completed successfully (with or without overtime), switch to the next mode automatically
+      const nextMode = mode === 'pomodoro' ? 'shortBreak' : 'pomodoro';
+      setMode(nextMode);
+      setTimeLeft(getDuration(nextMode));
+    } else {
+      // Aborted before finishing, just reset the current mode
+      setTimeLeft(getDuration(mode));
+    }
+    
     startTimeRef.current = null;
   };
 
@@ -205,12 +196,14 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
     setIsEditingGoal(false);
   };
 
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
+  const isOvertime = timeLeft < 0;
+  const absTimeLeft = Math.abs(timeLeft);
+  const minutes = Math.floor(absTimeLeft / 60);
+  const seconds = absTimeLeft % 60;
 
   // Calculate session progress
   const totalDuration = getDuration(mode);
-  const progress = (timeLeft / totalDuration) * 100;
+  const progress = Math.max(0, Math.min(100, (timeLeft / totalDuration) * 100));
   const strokeDasharray = 816.8; // 2 * pi * r (130)
   const strokeDashoffset = strokeDasharray - (progress / 100) * strokeDasharray;
 
@@ -386,7 +379,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
           </div>
 
           <span className="text-7xl font-light tracking-tighter tabular-nums text-white">
-            {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+            {isOvertime ? '+' : ''}{String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
           </span>
           <div className="h-12 w-full max-w-[200px] pointer-events-auto flex items-center justify-center mt-2">
             {/* The input gets moved here so it's inside the bottom half of the circle */}
@@ -440,14 +433,20 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
           </button>
           
           <button
-            onClick={toggleTimer}
-            disabled={isActive && isStrict}
-            className={`px-8 py-3 ${theme.button} ${theme.buttonHover} text-white rounded-xl font-semibold transition-colors shadow-lg ${theme.shadow} flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+            onClick={timeLeft <= 0 ? handleStop : toggleTimer}
+            disabled={isActive && isStrict && timeLeft > 0}
+            className={`px-8 py-3 ${theme.button} ${theme.buttonHover} text-white rounded-xl font-semibold transition-colors shadow-lg ${theme.shadow} flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${timeLeft <= 0 ? '!bg-green-600 hover:!bg-green-500 shadow-green-900/20' : ''}`}
           >
-            {isActive ? <><Pause size={16} className="fill-current" /> <span className="text-sm">Pause</span></> : <><Play size={16} className="fill-current" /> <span className="text-sm">Start</span></>}
+            {timeLeft <= 0 ? (
+              <><Square size={16} className="fill-current" /> <span className="text-sm">Complete</span></>
+            ) : isActive ? (
+              <><Pause size={16} className="fill-current" /> <span className="text-sm">Pause</span></>
+            ) : (
+              <><Play size={16} className="fill-current" /> <span className="text-sm">Start</span></>
+            )}
           </button>
   
-          {(isActive && !isStrict) && (
+          {(isActive && (!isStrict || timeLeft <= 0) && timeLeft > 0) && (
             <button
               onClick={handleStop}
               className="px-8 py-3 bg-white/5 hover:bg-red-500/20 text-white/80 hover:text-red-400 rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"
