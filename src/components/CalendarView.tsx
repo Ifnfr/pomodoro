@@ -3,7 +3,7 @@ import { fetchStudyEvents } from '../lib/calendar';
 import { startOfMonth, endOfMonth, getIsoDate, cn } from '../lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-export function CalendarView() {
+export function CalendarView({ dailyMap }: { dailyMap?: Map<string, number> }) {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
   const [eventsData, setEventsData] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(false);
@@ -107,28 +107,36 @@ export function CalendarView() {
           if (!day) return <div key={`empty-${i}`} className="h-14 bg-white/[0.02] rounded-lg" />;
           
           const dateStr = getIsoDate(day);
-          const secs = eventsData.get(dateStr) || 0;
+          const gcSecs = eventsData.get(dateStr) || 0;
+          const localMins = dailyMap?.get(dateStr) || 0;
+          const totalSecs = gcSecs + localMins * 60;
+          const totalMins = totalSecs / 60;
           
           let durationStr = '';
-          if (secs > 0) {
-            const h = Math.floor(secs / 3600);
-            const m = Math.floor((secs % 3600) / 60);
-            const s = secs % 60;
+          if (totalSecs > 0) {
+            const h = Math.floor(totalSecs / 3600);
+            const m = Math.floor((totalSecs % 3600) / 60);
             if (h > 0) {
-               durationStr = `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+               durationStr = `${h}h ${m}m`;
             } else {
-               durationStr = `${m}:${s.toString().padStart(2, '0')}`;
+               durationStr = `${m}m`;
             }
           }
+
+          let intensityClass = "bg-white/5 border-transparent text-white/50";
+          if (totalMins > 0 && totalMins < 30) intensityClass = "bg-blue-900/60 border-blue-800/50 text-blue-100";
+          else if (totalMins >= 30 && totalMins < 60) intensityClass = "bg-blue-700/80 border-blue-600/50 text-blue-100";
+          else if (totalMins >= 60 && totalMins < 120) intensityClass = "bg-blue-500 border-blue-400/50 text-white";
+          else if (totalMins >= 120) intensityClass = "bg-blue-400 border-blue-300/50 text-white";
 
           return (
             <div key={dateStr} className={cn(
                 "h-14 flex flex-col justify-between p-1.5 rounded-lg border",
-                secs > 0 ? "bg-blue-500/20 border-blue-500/30 text-blue-100" : "bg-white/5 border-transparent text-white/50"
+                intensityClass
             )}>
               <span className="text-xs font-medium self-start">{day.getDate()}</span>
-              {secs > 0 && (
-                <span className="text-[10px] font-bold self-end text-blue-300">
+              {totalSecs > 0 && (
+                <span className="text-[10px] font-bold self-end opacity-90">
                   {durationStr}
                 </span>
               )}

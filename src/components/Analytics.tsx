@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { Download } from 'lucide-react';
 import { getSessions, subscribeToSessions } from '../lib/storage';
 import { startOfDay, startOfWeek, startOfMonth, getIsoDate, cn } from '../lib/utils';
 import { Session } from '../types';
@@ -30,6 +31,34 @@ export function Analytics() {
   }, []);
   const [viewMode, setViewMode] = useState<'heatmap' | 'chart' | 'calendar'>('heatmap');
   const [hoveredCell, setHoveredCell] = useState<{ x: number, y: number, text: string } | null>(null);
+
+  const handleExportCSV = () => {
+    if (sessions.length === 0) return;
+
+    const headers = ['ID', 'Timestamp', 'Date', 'Mode', 'Duration (Minutes)', 'Topic'];
+    const rows = sessions.map(s => {
+      const date = new Date(s.timestamp).toLocaleString();
+      return [
+        s.id,
+        s.timestamp,
+        `"${date}"`,
+        s.mode,
+        s.durationMinutes.toFixed(2),
+        s.topic ? `"${s.topic.replace(/"/g, '""')}"` : ''
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'focus_sessions.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -156,7 +185,19 @@ export function Analytics() {
           {hoveredCell.text}
         </div>
       )}
-      <h2 className="text-sm font-semibold uppercase tracking-widest opacity-50 mb-6 shrink-0">Productivity Insights</h2>
+      
+      <div className="flex items-center justify-between mb-6 shrink-0">
+        <h2 className="text-sm font-semibold uppercase tracking-widest opacity-50">Productivity Insights</h2>
+        <button
+          onClick={handleExportCSV}
+          disabled={sessions.length === 0}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors border border-white/5"
+          title="Export CSV"
+        >
+          <Download size={14} />
+          Export
+        </button>
+      </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-3 gap-4 mb-6 shrink-0">
@@ -235,7 +276,7 @@ export function Analytics() {
         </div>
         
         {viewMode === 'calendar' ? (
-          <CalendarView />
+          <CalendarView dailyMap={stats.dailyMap} />
         ) : viewMode === 'heatmap' ? (
           <div className="bg-white/5 p-4 rounded-xl border border-white/5 flex flex-col mb-4">
             <div 
