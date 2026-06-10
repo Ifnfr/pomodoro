@@ -6,11 +6,12 @@ import { Settings } from './components/Settings';
 import { cn } from './lib/utils';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
-import { Palette, Volume2, VolumeX, Settings as SettingsIcon, CheckSquare } from 'lucide-react';
+import { Palette, Volume2, VolumeX, Settings as SettingsIcon, CheckSquare, PictureInPicture } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
 import { setCachedAccessToken } from './lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
+import { PipWrapper } from './components/PipWrapper';
 
 type View = 'timer' | 'analytics' | 'todos' | 'settings';
 
@@ -94,6 +95,7 @@ export default function App() {
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [isGlobalMuted, setIsGlobalMuted] = useState(false);
+  const [isPip, setIsPip] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('pomodoro_bg', bgId);
@@ -172,19 +174,19 @@ export default function App() {
             )}
             {(currentBg as any).isYoutube && (
               <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 bg-black">
-                <ReactPlayer
-                  url={`https://www.youtube.com/watch?v=${currentBg.value}`}
-                  playing
-                  loop
-                  muted={isGlobalMuted}
-                  controls={false}
-                  width="110vw"
-                  height="61.875vw"
-                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                  style={{ minWidth: '177.77vh', minHeight: '100vh' }}
-                  onReady={() => console.log('Player ready')}
-                  onError={(e) => console.log('Player error:', e)}
-                  config={{
+                {React.createElement(ReactPlayer as any, {
+                  url: `https://www.youtube.com/watch?v=${currentBg.value}`,
+                  playing: true,
+                  loop: true,
+                  muted: isGlobalMuted,
+                  controls: false,
+                  width: "110vw",
+                  height: "61.875vw",
+                  className: "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none",
+                  style: { minWidth: '177.77vh', minHeight: '100vh' },
+                  onReady: () => console.log('Player ready'),
+                  onError: (e: any) => console.log('Player error:', e),
+                  config: {
                     youtube: {
                       playerVars: { 
                         showinfo: 0, 
@@ -193,8 +195,8 @@ export default function App() {
                         vq: 'hd1080'
                       }
                     }
-                  }}
-                />
+                  }
+                })}
                 <div className="absolute inset-0 bg-black/60 pointer-events-none z-10" />
               </div>
             )}
@@ -204,7 +206,8 @@ export default function App() {
 
       
       {/* App content */}
-      <div className="relative z-10 flex flex-col h-full">
+      <PipWrapper isPip={isPip} onClose={() => setIsPip(false)}>
+        <div className="relative z-10 flex flex-col h-full w-full">
         {/* Navigation inside the app */}
         <header className="h-12 shrink-0 flex items-center px-4 sm:px-6 bg-white/5 border-b border-white/5 backdrop-blur-md relative z-50">
           <div className="flex justify-between items-center w-full max-w-xl mx-auto">
@@ -248,6 +251,15 @@ export default function App() {
             </nav>
             
             <div className="flex items-center gap-3">
+              {!isPip && (
+                <button
+                  onClick={() => setIsPip(true)}
+                  className="p-1.5 opacity-50 hover:bg-white/10 hover:opacity-100 rounded-lg transition-all text-white"
+                  title="Pop Out (Always on Top)"
+                >
+                  <PictureInPicture size={16} />
+                </button>
+              )}
               <button
                 onClick={() => setIsGlobalMuted(!isGlobalMuted)}
                 className="p-1.5 opacity-50 hover:bg-white/10 hover:opacity-100 rounded-lg transition-all text-white"
@@ -357,6 +369,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      </PipWrapper>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3, Square } from 'lucide-react';
+import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3, Square, Flame } from 'lucide-react';
 import { Mode, Session } from '../types';
 import { addSession, getSessions, subscribeToSessions } from '../lib/storage';
-import { cn, getIsoDate, sendNotification } from '../lib/utils';
+import { cn, getIsoDate, sendNotification, calculateStreak } from '../lib/utils';
 import { playChime } from '../lib/audio';
 import { addEventToCalendar } from '../lib/calendar';
 
@@ -42,6 +42,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   
   // Today's completed minutes
   const [todayCompletedMinutes, setTodayCompletedMinutes] = useState(0);
+  const [currentStreak, setCurrentStreak] = useState(0);
 
   const startTimeRef = useRef<number | null>(null);
 
@@ -85,6 +86,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
         .filter(s => s.mode === 'pomodoro' && getIsoDate(new Date(s.timestamp)) === todayStr)
         .reduce((sum, s) => sum + s.durationMinutes, 0);
       setTodayCompletedMinutes(todayMins);
+      setCurrentStreak(calculateStreak(sessions));
     });
     return () => unsub();
   }, []);
@@ -242,8 +244,16 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 h-full text-white overflow-y-auto scrollbar-hide">
+    <div className="flex flex-col items-center justify-center p-6 h-full text-white overflow-y-auto scrollbar-hide relative w-full">
       
+      {/* Streak Indicator */}
+      {currentStreak > 0 && (
+        <div className="absolute top-6 right-6 flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full shadow-sm font-medium" title={`${currentStreak} day streak`}>
+          <Flame size={14} className="fill-current animate-pulse" />
+          <span className="text-xs">{currentStreak}</span>
+        </div>
+      )}
+
       {/* Mode Selectors */}
       <div className="flex gap-4 mb-4 shrink-0">
         {(Object.keys(MODE_DURATIONS) as Mode[]).map((m) => (

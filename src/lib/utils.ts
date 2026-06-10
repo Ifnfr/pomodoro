@@ -50,3 +50,44 @@ export function sendNotification(title: string, body?: string) {
     });
   }
 }
+
+export function calculateStreak(sessions: any[]): number {
+  if (!sessions || sessions.length === 0) return 0;
+  
+  const pomodoroDates = new Set<string>();
+  for (const s of sessions) {
+    if (s.mode === 'pomodoro' && s.durationMinutes > 0) {
+      pomodoroDates.add(getIsoDate(new Date(s.timestamp)));
+    }
+  }
+
+  if (pomodoroDates.size === 0) return 0;
+
+  let streak = 0;
+  let currentDate = new Date();
+  let dateStr = getIsoDate(currentDate);
+
+  if (pomodoroDates.has(dateStr)) {
+    streak++;
+  } else {
+    currentDate.setDate(currentDate.getDate() - 1);
+    dateStr = getIsoDate(currentDate);
+    if (!pomodoroDates.has(dateStr)) {
+      return 0;
+    } else {
+      streak++;
+    }
+  }
+
+  while (true) {
+    currentDate.setDate(currentDate.getDate() - 1);
+    dateStr = getIsoDate(currentDate);
+    if (pomodoroDates.has(dateStr)) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
