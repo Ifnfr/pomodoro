@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Download } from 'lucide-react';
+import { Download, Share2 } from 'lucide-react';
 import { getSessions, subscribeToSessions } from '../lib/storage';
 import { startOfDay, startOfWeek, startOfMonth, getIsoDate, cn } from '../lib/utils';
 import { Session } from '../types';
@@ -91,6 +91,28 @@ export function Analytics() {
 
     return { todayMinutes, weekMinutes, monthMinutes, dailyMap, topicStats };
   }, [sessions]);
+
+  const handleShare = async () => {
+    const text = `🎯 My Focus Stats:
+Today: ${formatDuration(stats.todayMinutes)}
+This Week: ${formatDuration(stats.weekMinutes)}
+This Month: ${formatDuration(stats.monthMinutes)}
+
+Built with Focus App.`;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'My Focus Stats',
+          text: text
+        });
+      } catch (err) {
+        console.error('Share failed:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(text);
+      alert('Stats copied to clipboard!');
+    }
+  };
 
   // Generate heatmap grid (padded for exactly full columns ending this week)
   const heatmapData = useMemo(() => {
@@ -188,15 +210,25 @@ export function Analytics() {
       
       <div className="flex items-center justify-between mb-6 shrink-0">
         <h2 className="text-sm font-semibold uppercase tracking-widest opacity-50">Productivity Insights</h2>
-        <button
-          onClick={handleExportCSV}
-          disabled={sessions.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors border border-white/5"
-          title="Export CSV"
-        >
-          <Download size={14} />
-          Export
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-colors border border-blue-500/20"
+            title="Share Insights"
+          >
+            <Share2 size={14} />
+            Share
+          </button>
+          <button
+            onClick={handleExportCSV}
+            disabled={sessions.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors border border-white/5"
+            title="Export CSV"
+          >
+            <Download size={14} />
+            Export
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
