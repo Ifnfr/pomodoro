@@ -7,7 +7,7 @@ import { cn } from './lib/utils';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
 import { Palette, Volume2, Settings as SettingsIcon, CheckSquare } from 'lucide-react';
-import { onAuthStateChanged, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
+import { onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
 import { setCachedAccessToken } from './lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
@@ -119,18 +119,6 @@ export default function App() {
 
   useEffect(() => {
     try {
-      getRedirectResult(auth)
-        .then((result) => {
-          if (result) {
-            const credential = GoogleAuthProvider.credentialFromResult(result);
-            if (credential?.accessToken) {
-              setCachedAccessToken(credential.accessToken);
-            }
-          }
-        })
-        .catch(e => {
-        console.error("Redirect error: ", e);
-      });
       const unsubscribe = onAuthStateChanged(auth, (u) => {
         setUser(u);
         setNeedsAuth(false);

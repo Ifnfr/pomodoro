@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -9,12 +9,22 @@ export const auth = getAuth(app);
 
 let cachedAccessToken: string | null = null;
 
-export const loginWithGoogle = () => {
+export const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/calendar.events');
     provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    // Use redirect instead of popup to bypass strict iframe/cookie constraints
-    return signInWithRedirect(auth, provider);
+    
+    try {
+        const result = await signInWithPopup(auth, provider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+            setCachedAccessToken(credential.accessToken);
+        }
+        return result;
+    } catch (error) {
+        console.error('Sign in error:', error);
+        throw error;
+    }
 };
 
 export const logout = async () => {
