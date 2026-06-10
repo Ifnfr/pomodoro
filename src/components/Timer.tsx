@@ -19,8 +19,13 @@ const MODE_LABELS: Record<Mode, string> = {
 };
 
 export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
+  const [pomodoroDurationInit] = useState<number>(() => {
+    const saved = localStorage.getItem('focus_pomodoro_duration');
+    return saved ? parseInt(saved, 10) : 25;
+  });
+
   const [mode, setMode] = useState<Mode>('pomodoro');
-  const [timeLeft, setTimeLeft] = useState(MODE_DURATIONS['pomodoro']);
+  const [timeLeft, setTimeLeft] = useState(pomodoroDurationInit * 60);
   const [isActive, setIsActive] = useState(false);
   const [topic, setTopic] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -47,6 +52,15 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
         .map(s => s.topic as string)
     )
   );
+
+  const [pomodoroDuration, setPomodoroDuration] = useState<number>(() => {
+    const saved = localStorage.getItem('focus_pomodoro_duration');
+    return saved ? parseInt(saved, 10) : 25;
+  });
+
+  const getDuration = (m: Mode) => {
+    return m === 'pomodoro' ? pomodoroDuration * 60 : MODE_DURATIONS[m];
+  };
 
   const [isStrict, setIsStrict] = useState(() => localStorage.getItem('pomodoro_strict_mode') !== 'false');
 
@@ -101,15 +115,15 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
         addSession({
           id: crypto.randomUUID(),
           timestamp: startTimeRef.current || Date.now(),
-          durationMinutes: MODE_DURATIONS.pomodoro / 60,
+          durationMinutes: pomodoroDuration,
           mode: 'pomodoro',
-          topic: topic.trim() || undefined,
+          ...(topic.trim() ? { topic: topic.trim() } : {}),
         });
         
         // Sync to calendar
         addEventToCalendar(
           'Deep Work Session (Pomodoro)', 
-          MODE_DURATIONS.pomodoro / 60,
+          pomodoroDuration,
           startTimeRef.current || Date.now()
         );
       }
@@ -117,11 +131,11 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
       // Auto-switch mode or just wait for user
       const nextMode = mode === 'pomodoro' ? 'shortBreak' : 'pomodoro';
       setMode(nextMode);
-      setTimeLeft(MODE_DURATIONS[nextMode]);
+      setTimeLeft(getDuration(nextMode));
     }
 
     return () => clearInterval(interval);
-  }, [isActive, timeLeft, mode, soundEnabled, topic]);
+  }, [isActive, timeLeft, mode, soundEnabled, topic, pomodoroDuration]);
 
   const toggleTimer = () => {
     if (!isActive) {
@@ -135,20 +149,28 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
 
   const resetTimer = () => {
     setIsActive(false);
-    setTimeLeft(MODE_DURATIONS[mode]);
+    setTimeLeft(getDuration(mode));
   };
 
   const changeMode = (newMode: Mode) => {
     setIsActive(false);
     setMode(newMode);
-    setTimeLeft(MODE_DURATIONS[newMode]);
+    setTimeLeft(getDuration(newMode));
+  };
+
+  const changePomodoroDuration = (mins: number) => {
+    setPomodoroDuration(mins);
+    localStorage.setItem('focus_pomodoro_duration', String(mins));
+    if (mode === 'pomodoro' && !isActive) {
+      setTimeLeft(mins * 60);
+    }
   };
 
   const handleStop = () => {
     if (!isActive) return;
     setIsActive(false);
 
-    const timeSpentSeconds = MODE_DURATIONS[mode] - timeLeft;
+    const timeSpentSeconds = getDuration(mode) - timeLeft;
     if (timeSpentSeconds > 0 && mode === 'pomodoro') {
       const durationMinutes = timeSpentSeconds / 60;
       addSession({
@@ -156,7 +178,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
         timestamp: startTimeRef.current || Date.now(),
         durationMinutes: durationMinutes,
         mode: 'pomodoro',
-        topic: topic.trim() || undefined,
+        ...(topic.trim() ? { topic: topic.trim() } : {}),
       });
 
       // Sync to calendar
@@ -167,7 +189,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
       );
     }
 
-    setTimeLeft(MODE_DURATIONS[mode]);
+    setTimeLeft(getDuration(mode));
     startTimeRef.current = null;
   };
 
@@ -185,7 +207,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   const seconds = timeLeft % 60;
 
   // Calculate session progress
-  const totalDuration = MODE_DURATIONS[mode];
+  const totalDuration = getDuration(mode);
   const progress = (timeLeft / totalDuration) * 100;
   const strokeDasharray = 816.8; // 2 * pi * r (130)
   const strokeDashoffset = strokeDasharray - (progress / 100) * strokeDasharray;
@@ -193,7 +215,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   // Calculate daily goal progress (including current active pomodoro time)
   let currentActivePomodoroMins = 0;
   if (isActive && mode === 'pomodoro') {
-    currentActivePomodoroMins = (MODE_DURATIONS.pomodoro - timeLeft) / 60;
+    currentActivePomodoroMins = (totalDuration - timeLeft) / 60;
   }
   const currentTotalTodayMins = todayCompletedMinutes + currentActivePomodoroMins;
   const goalProgressRaw = (currentTotalTodayMins / dailyGoalMinutes) * 100;
@@ -223,7 +245,7 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
     <div className="flex flex-col items-center justify-center p-6 h-full text-white overflow-y-auto scrollbar-hide">
       
       {/* Mode Selectors */}
-      <div className="flex gap-4 mb-8 shrink-0">
+      <div className="flex gap-4 mb-4 shrink-0">
         {(Object.keys(MODE_DURATIONS) as Mode[]).map((m) => (
           <button
             key={m}
@@ -238,6 +260,31 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
             {MODE_LABELS[m]}
           </button>
         ))}
+      </div>
+
+      {/* Preset Duration Selector */}
+      <div className="h-8 mb-6 flex items-center justify-center shrink-0">
+        {mode === 'pomodoro' ? (
+          <div className="flex bg-white/5 rounded-full p-0.5 backdrop-blur-sm border border-white/5">
+            {[25, 50, 90].map(mins => (
+              <button
+                key={mins}
+                disabled={isActive}
+                onClick={() => changePomodoroDuration(mins)}
+                className={cn(
+                  "px-4 py-1 text-xs font-semibold rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
+                  pomodoroDuration === mins
+                    ? `bg-white/10 ${theme.textBold} shadow-sm`
+                    : "text-white/40 hover:text-white/80 hover:bg-white/5"
+                )}
+              >
+                {mins}m
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex p-0.5" />
+        )}
       </div>
 
       {/* Timer Circle */}

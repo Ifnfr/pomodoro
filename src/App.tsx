@@ -6,7 +6,7 @@ import { Settings } from './components/Settings';
 import { cn } from './lib/utils';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
-import { Palette, Volume2, Settings as SettingsIcon, CheckSquare } from 'lucide-react';
+import { Palette, Volume2, VolumeX, Settings as SettingsIcon, CheckSquare } from 'lucide-react';
 import { onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
 import { setCachedAccessToken } from './lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -48,11 +48,14 @@ const BACKGROUNDS = [
   { id: 'live-windrises', name: 'The Wind Rises (Live)', value: '/the_wind_rises.mp4', isImage: false, isVideo: true, themeColor: 'orange' },
 ];
 
-function VideoBackground({ src }: { src: string }) {
+function VideoBackground({ src, muted }: { src: string; muted: boolean }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
   React.useEffect(() => {
     if (videoRef.current) {
+      if (videoRef.current.muted !== muted) {
+        videoRef.current.muted = muted;
+      }
       // Force play it again whenever src changes if autoPlay didn't catch it
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
@@ -63,7 +66,7 @@ function VideoBackground({ src }: { src: string }) {
         });
       }
     }
-  }, [src]);
+  }, [src, muted]);
 
   return (
     <video
@@ -71,7 +74,7 @@ function VideoBackground({ src }: { src: string }) {
       src={src}
       loop
       autoPlay
-      muted
+      muted={muted}
       playsInline
       preload="auto"
       disablePictureInPicture
@@ -89,20 +92,12 @@ export default function App() {
   
   const [bgId, setBgId] = useState(() => localStorage.getItem('pomodoro_bg') || 'default');
   const [showBgPicker, setShowBgPicker] = useState(false);
-  const [bgMusicUrl, setBgMusicUrl] = useState(() => localStorage.getItem('pomodoro_bg_music') || '');
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [isGlobalMuted, setIsGlobalMuted] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('pomodoro_bg', bgId);
   }, [bgId]);
-
-  useEffect(() => {
-      const handleMusicChange = () => {
-          setBgMusicUrl(localStorage.getItem('pomodoro_bg_music') || '');
-      };
-      window.addEventListener('bg_music_change', handleMusicChange);
-      return () => window.removeEventListener('bg_music_change', handleMusicChange);
-  }, []);
 
   useEffect(() => {
     const onInteract = () => setHasInteracted(true);
@@ -171,7 +166,7 @@ export default function App() {
             )}
             {(currentBg as any).isVideo && (
               <>
-                <VideoBackground src={currentBg.value} />
+                <VideoBackground src={currentBg.value} muted={isGlobalMuted} />
                 <div className="absolute inset-0 bg-black/60 pointer-events-none z-10" />
               </>
             )}
@@ -181,7 +176,7 @@ export default function App() {
                   url={`https://www.youtube.com/watch?v=${currentBg.value}`}
                   playing
                   loop
-                  muted
+                  muted={isGlobalMuted}
                   controls={false}
                   width="110vw"
                   height="61.875vw"
@@ -206,26 +201,6 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
       </div>
-
-      {bgMusicUrl && (
-        <div className="absolute w-[1px] h-[1px] opacity-0 pointer-events-none overflow-hidden z-[-1]">
-          <ReactPlayer
-            url={`https://www.youtube.com/watch?v=${bgMusicUrl}`}
-            playing={hasInteracted}
-            loop={true}
-            volume={0.5}
-            width="100px"
-            height="100px"
-            config={{
-              youtube: {
-                playerVars: {
-                  autoplay: 1
-                }
-              }
-            }}
-          />
-        </div>
-      )}
 
       
       {/* App content */}
@@ -273,6 +248,13 @@ export default function App() {
             </nav>
             
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsGlobalMuted(!isGlobalMuted)}
+                className="p-1.5 opacity-50 hover:bg-white/10 hover:opacity-100 rounded-lg transition-all text-white"
+                title={isGlobalMuted ? "Unmute" : "Mute"}
+              >
+                {isGlobalMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              </button>
               <div className="relative">
                 <button
                   onClick={() => setShowBgPicker(!showBgPicker)}
