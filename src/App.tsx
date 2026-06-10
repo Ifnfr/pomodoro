@@ -44,7 +44,7 @@ const BACKGROUNDS = [
   { id: 'bathers-asnieres', name: 'Bathers at Asnières', value: 'https://commons.wikimedia.org/wiki/Special:FilePath/Georges_Seurat_-_Bathers_at_Asni%C3%A8res_-_Google_Art_Project.jpg?width=1280', isImage: true, themeColor: 'blue' },
   { id: 'arnolfini', name: 'The Arnolfini Portrait', value: 'https://commons.wikimedia.org/wiki/Special:FilePath/Jan_van_Eyck_-_The_Arnolfini_Portrait_-_Google_Art_Project.jpg?width=1280', isImage: true, themeColor: 'amber' },
   { id: 'live-howl', name: 'Howl\'s Moving Castle (Live)', value: '/howl.mp4', isImage: false, isVideo: true, themeColor: 'slate' },
-  { id: 'live-gojo', name: 'Gojo Satoru (Live)', value: '/gojo.mp4', isImage: false, isVideo: true, themeColor: 'blue' },
+  { id: 'live-gojo', name: 'Gojo Satoru (Live)', value: '/Gojo.mp4.mp4', isImage: false, isVideo: true, themeColor: 'blue' },
   { id: 'live-windrises', name: 'The Wind Rises (Live)', value: '/the_wind_rises.mp4', isImage: false, isVideo: true, themeColor: 'orange' },
 ];
 
