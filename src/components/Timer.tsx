@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3, Square } from 'lucide-react';
 import { Mode, Session } from '../types';
 import { addSession, getSessions, subscribeToSessions } from '../lib/storage';
-import { cn, getIsoDate } from '../lib/utils';
+import { cn, getIsoDate, sendNotification } from '../lib/utils';
 import { playChime } from '../lib/audio';
 import { addEventToCalendar } from '../lib/calendar';
 
@@ -48,6 +48,14 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
     )
   );
 
+  const [isStrict, setIsStrict] = useState(() => localStorage.getItem('pomodoro_strict_mode') !== 'false');
+
+  useEffect(() => {
+    const handleStrictChange = () => setIsStrict(localStorage.getItem('pomodoro_strict_mode') !== 'false');
+    window.addEventListener('strict_mode_change', handleStrictChange);
+    return () => window.removeEventListener('strict_mode_change', handleStrictChange);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('focus_sound', String(soundEnabled));
   }, [soundEnabled]);
@@ -82,6 +90,12 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
         playChime();
       }
 
+      if (mode === 'pomodoro') {
+        sendNotification('Pomodoro Completed!', 'Great job focusing. Time to take a break.');
+      } else {
+        sendNotification('Break Finished!', 'Time to get back to work.');
+      }
+
       // Save session if it was a work session
       if (mode === 'pomodoro') {
         addSession({
@@ -112,6 +126,9 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
   const toggleTimer = () => {
     if (!isActive) {
       startTimeRef.current = Date.now();
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
     }
     setIsActive(!isActive);
   };
@@ -367,12 +384,13 @@ export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
           
           <button
             onClick={toggleTimer}
-            className={`px-8 py-3 ${theme.button} ${theme.buttonHover} text-white rounded-xl font-semibold transition-colors shadow-lg ${theme.shadow} flex items-center gap-2`}
+            disabled={isActive && isStrict}
+            className={`px-8 py-3 ${theme.button} ${theme.buttonHover} text-white rounded-xl font-semibold transition-colors shadow-lg ${theme.shadow} flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             {isActive ? <><Pause size={16} className="fill-current" /> <span className="text-sm">Pause</span></> : <><Play size={16} className="fill-current" /> <span className="text-sm">Start</span></>}
           </button>
   
-          {isActive && (
+          {(isActive && !isStrict) && (
             <button
               onClick={handleStop}
               className="px-8 py-3 bg-white/5 hover:bg-red-500/20 text-white/80 hover:text-red-400 rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"

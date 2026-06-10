@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Timer } from './components/Timer';
 import { Analytics } from './components/Analytics';
+import { Todos } from './components/Todos';
+import { Settings } from './components/Settings';
 import { cn } from './lib/utils';
 import { auth, loginWithGoogle, logout } from './lib/firebase';
 import type { User } from 'firebase/auth';
-import { Palette } from 'lucide-react';
+import { Palette, Volume2, Settings as SettingsIcon, CheckSquare } from 'lucide-react';
 import { onAuthStateChanged, getRedirectResult, GoogleAuthProvider } from 'firebase/auth';
 import { setCachedAccessToken } from './lib/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
 
-type View = 'timer' | 'analytics';
+type View = 'timer' | 'analytics' | 'todos' | 'settings';
+
 
 const BACKGROUNDS = [
   { id: 'default', name: 'Default Dark', value: 'bg-[#0a0a0a]', isImage: false, themeColor: 'blue' },
@@ -41,7 +44,7 @@ const BACKGROUNDS = [
   { id: 'bathers-asnieres', name: 'Bathers at Asnières', value: 'https://commons.wikimedia.org/wiki/Special:FilePath/Georges_Seurat_-_Bathers_at_Asni%C3%A8res_-_Google_Art_Project.jpg?width=1280', isImage: true, themeColor: 'blue' },
   { id: 'arnolfini', name: 'The Arnolfini Portrait', value: 'https://commons.wikimedia.org/wiki/Special:FilePath/Jan_van_Eyck_-_The_Arnolfini_Portrait_-_Google_Art_Project.jpg?width=1280', isImage: true, themeColor: 'amber' },
   { id: 'live-howl', name: 'Howl\'s Moving Castle (Live)', value: '/howl.mp4', isImage: false, isVideo: true, themeColor: 'slate' },
-  { id: 'live-kiminonawa', name: 'Kimi no Na wa (Live)', value: 'wSuc5-m0cb8', isImage: false, isYoutube: true, themeColor: 'blue' },
+  { id: 'live-gojo', name: 'Gojo Satoru (Live)', value: '/gojo.mp4', isImage: false, isVideo: true, themeColor: 'blue' },
   { id: 'live-windrises', name: 'The Wind Rises (Live)', value: '/the_wind_rises.mp4', isImage: false, isVideo: true, themeColor: 'orange' },
 ];
 
@@ -54,7 +57,9 @@ function VideoBackground({ src }: { src: string }) {
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.catch((error) => {
-          console.warn('Video auto-play interrupted or prevented:', error);
+          if (error.name !== 'AbortError') {
+             console.warn('Video auto-play interrupted or prevented:', error);
+          }
         });
       }
     }
@@ -84,10 +89,31 @@ export default function App() {
   
   const [bgId, setBgId] = useState(() => localStorage.getItem('pomodoro_bg') || 'default');
   const [showBgPicker, setShowBgPicker] = useState(false);
+  const [bgMusicUrl, setBgMusicUrl] = useState(() => localStorage.getItem('pomodoro_bg_music') || '');
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('pomodoro_bg', bgId);
   }, [bgId]);
+
+  useEffect(() => {
+      const handleMusicChange = () => {
+          setBgMusicUrl(localStorage.getItem('pomodoro_bg_music') || '');
+      };
+      window.addEventListener('bg_music_change', handleMusicChange);
+      return () => window.removeEventListener('bg_music_change', handleMusicChange);
+  }, []);
+
+  useEffect(() => {
+    const onInteract = () => setHasInteracted(true);
+    window.addEventListener('click', onInteract, { once: true });
+    window.addEventListener('keydown', onInteract, { once: true });
+    return () => {
+      window.removeEventListener('click', onInteract);
+      window.removeEventListener('keydown', onInteract);
+    };
+  }, []);
+
 
   const currentBg = BACKGROUNDS.find(b => b.id === bgId) || BACKGROUNDS[0];
 
@@ -192,6 +218,27 @@ export default function App() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {bgMusicUrl && (
+        <div className="absolute w-[1px] h-[1px] opacity-0 pointer-events-none overflow-hidden z-[-1]">
+          <ReactPlayer
+            url={`https://www.youtube.com/watch?v=${bgMusicUrl}`}
+            playing={hasInteracted}
+            loop={true}
+            volume={0.5}
+            width="100px"
+            height="100px"
+            config={{
+              youtube: {
+                playerVars: {
+                  autoplay: 1
+                }
+              }
+            }}
+          />
+        </div>
+      )}
+
       
       {/* App content */}
       <div className="relative z-10 flex flex-col h-full">
@@ -209,6 +256,15 @@ export default function App() {
                 Timer
               </button>
               <button
+                onClick={() => setCurrentView('todos')}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs font-semibold py-3 transition-colors",
+                  currentView === 'todos' ? "border-b-2 border-blue-500 text-white" : "text-white/40 hover:text-white"
+                )}
+              >
+                <CheckSquare size={14} /> Todos
+              </button>
+              <button
                 onClick={() => setCurrentView('analytics')}
                 className={cn(
                   "text-xs font-semibold py-3 transition-colors",
@@ -216,6 +272,15 @@ export default function App() {
                 )}
               >
                 Dashboard
+              </button>
+              <button
+                onClick={() => setCurrentView('settings')}
+                className={cn(
+                  "flex items-center gap-1.5 text-xs font-semibold py-3 transition-colors",
+                  currentView === 'settings' ? "border-b-2 border-blue-500 text-white" : "text-white/40 hover:text-white"
+                )}
+              >
+                <SettingsIcon size={14} /> Settings
               </button>
             </nav>
             
@@ -296,7 +361,7 @@ export default function App() {
         <div className="flex-1 overflow-hidden flex justify-center">
           <div className={cn(
             "w-full relative h-full transition-all duration-500",
-            currentView === 'analytics' ? "max-w-4xl" : "max-w-[440px]"
+            currentView === 'analytics' ? "max-w-4xl" : currentView === 'todos' ? "max-w-6xl" : currentView === 'settings' ? "max-w-2xl" : "max-w-[440px]"
           )}>
             <div className={cn("absolute inset-0 overflow-y-auto overflow-x-hidden scrollbar-hide pt-12 transition-opacity duration-300", currentView === 'timer' ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none")}>
               <Timer themeColor={currentBg.themeColor} />
@@ -305,6 +370,18 @@ export default function App() {
             {currentView === 'analytics' && (
               <div className="absolute inset-0 overflow-y-auto overflow-x-hidden scrollbar-hide pt-12 z-20">
                 <Analytics />
+              </div>
+            )}
+
+            {currentView === 'todos' && (
+              <div className="absolute inset-0 overflow-y-auto overflow-x-hidden scrollbar-hide pt-12 z-20">
+                <Todos />
+              </div>
+            )}
+
+            {currentView === 'settings' && (
+              <div className="absolute inset-0 overflow-y-auto overflow-x-hidden scrollbar-hide pt-12 z-20">
+                <Settings />
               </div>
             )}
           </div>
