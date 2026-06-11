@@ -94,8 +94,10 @@ export async function testConnection() {
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log("Firebase connected successfully");
   } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Koneksi Firebase offline atau dibatasi di lingkungan sandbox ini. Jika Anda melihat ini di browser Anda, pastikan Firestore Database Anda sudah diaktifkan di Firebase Console.");
+    } else {
+      console.warn("Koneksi Firestore gagal saat pengujian awal:", error);
     }
   }
 }
