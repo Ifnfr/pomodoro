@@ -1,29 +1,48 @@
-export type Mode = 'pomodoro' | 'shortBreak' | 'longBreak';
-
-export interface Session {
-  id: string;
-  userId?: string;
-  timestamp: number; // Unix timestamp in MS
-  durationMinutes: number;
-  mode: Mode;
-  topic?: string;
+export interface TimerSettings {
+  focusTime: number; // in minutes
+  shortBreak: number; // in minutes
+  longBreak: number; // in minutes
+  longBreakInterval: number; // number of focus sessions before a long break
+  soundVolume: number; // 0 to 1
+  soundTheme: 'classic' | 'digital' | 'soft' | 'nature';
+  autoStartBreaks: boolean;
+  autoStartPomodoros: boolean;
+  themeBackground: string;
 }
 
-export interface DailyStat {
-  dateStr: string; // YYYY-MM-DD
-  totalWorkMinutes: number;
-}
-
-export interface Todo {
+export interface TodoItem {
   id: string;
   text: string;
   completed: boolean;
-  priority: 'low' | 'medium' | 'high';
+  pomodorosEstimated: number;
+  pomodorosCompleted: number;
   createdAt: number;
 }
 
-export interface CountdownEvent {
+export interface StudySession {
   id: string;
+  type: 'focus' | 'shortBreak' | 'longBreak';
+  duration: number; // in seconds
+  timestamp: number; // epoch
+  taskId?: string;
+  taskTitle?: string;
+}
+
+export interface AppWindowState {
+  id: 'timer' | 'todos' | 'settings' | 'analytics' | 'calendar';
   title: string;
+  isOpen: boolean;
+  isMinimized: boolean;
+  zIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface DailyStat {
   date: string; // YYYY-MM-DD
+  focusDuration: number; // in seconds
+  pomodorosCount: number;
+  tasksCompleted: number;
 }

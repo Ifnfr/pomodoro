@@ -1,201 +1,189 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CheckCircle, Circle, Calendar } from 'lucide-react';
-import { Todo, CountdownEvent } from '../types';
-import { cn, getIsoDate } from '../lib/utils';
+import React, { useState } from 'react';
+import { TodoItem } from '../types';
+import { Plus, Trash2, CheckCircle, Circle, Sparkles } from 'lucide-react';
+import { playBtnSound } from '../lib/audio';
 
-export function Todos() {
-  const [todos, setTodos] = useState<Todo[]>(() => {
-    try {
-      const data = localStorage.getItem('pomodoro_todos');
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  });
-  
-  const [events, setEvents] = useState<CountdownEvent[]>(() => {
-    try {
-      const data = localStorage.getItem('pomodoro_events');
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  });
+interface TodosProps {
+  todos: TodoItem[];
+  onAddTodo: (text: string, estimated: number) => void;
+  onToggleTodo: (id: string) => void;
+  onDeleteTodo: (id: string) => void;
+  activeTodoId: string | null;
+  onSetActiveTodo: (id: string | null) => void;
+}
 
-  const [newTask, setNewTask] = useState('');
-  const [newEventTitle, setNewEventTitle] = useState('');
-  const [newEventDate, setNewEventDate] = useState('');
+export const Todos: React.FC<TodosProps> = ({
+  todos,
+  onAddTodo,
+  onToggleTodo,
+  onDeleteTodo,
+  activeTodoId,
+  onSetActiveTodo,
+}) => {
+  const [newText, setNewText] = useState('');
+  const [estimated, setEstimated] = useState(1);
 
-  useEffect(() => {
-    localStorage.setItem('pomodoro_todos', JSON.stringify(todos));
-  }, [todos]);
-
-  useEffect(() => {
-    localStorage.setItem('pomodoro_events', JSON.stringify(events));
-  }, [events]);
-
-  const handleAddTodo = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTask.trim()) return;
-    const t: Todo = {
-      id: crypto.randomUUID(),
-      text: newTask.trim(),
-      completed: false,
-      priority: 'medium',
-      createdAt: Date.now()
-    };
-    setTodos([t, ...todos]);
-    setNewTask('');
+    if (!newText.trim()) return;
+    onAddTodo(newText.trim(), estimated);
+    setNewText('');
+    setEstimated(1);
+    playBtnSound();
   };
 
-  const handleAddEvent = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEventTitle.trim() || !newEventDate) return;
-    const ev: CountdownEvent = {
-        id: crypto.randomUUID(),
-        title: newEventTitle.trim(),
-        date: newEventDate
-    };
-    setEvents([...events, ev].sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
-    setNewEventTitle('');
-    setNewEventDate('');
-  };
-
-  const toggleTodo = (id: string) => {
-    setTodos(todos.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
-  };
-
-  const deleteTodo = (id: string) => {
-    setTodos(todos.filter(t => t.id !== id));
-  };
-  
-  const deleteEvent = (id: string) => {
-    setEvents(events.filter(e => e.id !== id));
-  };
-
-  const calculateDaysLeft = (targetDateStr: string) => {
-      // Calculate D-Day
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const target = new Date(targetDateStr);
-      target.setHours(0,0,0,0);
-      const diffMs = target.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      return diffDays; // negative if passed, positive if future
+  const renderTomatoes = (count: number, filledCount: number) => {
+    const tomatoes = [];
+    for (let i = 0; i < count; i++) {
+      tomatoes.push(
+        <span 
+          key={i} 
+          className={`text-xs select-none ${i < filledCount ? 'text-rose-500' : 'text-slate-600'}`}
+          title={`${filledCount}/${count} Pomodoro`}
+        >
+          🍅
+        </span>
+      );
+    }
+    return <div className="flex gap-0.5">{tomatoes}</div>;
   };
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 p-6 md:p-8 h-full text-white w-full max-w-6xl mx-auto overflow-y-auto scrollbar-hide">
-      
-      {/* Todo List Area */}
-      <div className="flex-1 flex flex-col min-h-0 bg-white/5 rounded-2xl border border-white/5 p-6 relative">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            Task List
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">
-                {todos.filter(t => !t.completed).length} pending
-            </span>
-          </h2>
-          
-          <form onSubmit={handleAddTodo} className="flex gap-2 mb-6">
-            <input
-              type="text"
-              value={newTask}
-              onChange={e => setNewTask(e.target.value)}
-              placeholder="What needs to be done?"
-              className="flex-1 bg-black/40 border-none rounded-xl px-4 py-3 text-sm text-white/90 placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
-            />
-            <button type="submit" className="p-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl transition-colors shadow-lg">
-                <Plus size={20} />
-            </button>
-          </form>
+    <div className="flex flex-col h-full text-slate-200">
+      {/* Task input form */}
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2 p-3 border-b border-slate-700/40 bg-slate-800/10 shrink-0">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Apa yang ingin Anda pelajari hari ini?..."
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            className="flex-1 min-w-0 bg-slate-900/60 border border-slate-700/60 rounded px-2.5 py-1.5 text-sm placeholder:text-slate-500 focus:outline-none focus:border-rose-500 transition-colors"
+          />
+          <button
+            type="submit"
+            className="bg-rose-600 hover:bg-rose-500 text-white font-medium px-3.5 py-1.5 rounded text-sm transition-colors flex items-center justify-center gap-1 shrink-0"
+          >
+            <Plus size={16} />
+            <span className="hidden sm:inline">Tambah</span>
+          </button>
+        </div>
 
-          <div className="flex flex-col gap-2 flex-1 overflow-y-auto scrollbar-hide">
-            {todos.length === 0 ? (
-                <div className="text-center text-white/30 text-sm py-12">No tasks remaining. Keep it up!</div>
-            ) : (
-              todos.sort((a,b) => Number(a.completed) - Number(b.completed) || b.createdAt - a.createdAt).map(t => (
-                <div 
-                    key={t.id} 
-                    className={cn(
-                        "group flex items-center gap-3 p-3 rounded-xl border transition-all",
-                        t.completed ? "bg-white/5 border-transparent opacity-50" : "bg-black/20 border-white/10 hover:border-white/20"
+        <div className="flex items-center justify-between text-xs text-slate-400 px-0.5 mt-1">
+          <span className="font-medium">Estimasi Durasi (Sesi 🍅):</span>
+          <div className="flex items-center gap-1 bg-slate-950/40 px-2 py-1 rounded border border-slate-800">
+            {[1, 2, 3, 4, 5].map((num) => (
+              <button
+                key={num}
+                type="button"
+                onClick={() => {
+                  playBtnSound();
+                  setEstimated(num);
+                }}
+                className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+                  estimated === num 
+                    ? 'bg-rose-500/20 text-rose-400 border border-rose-500/50 font-bold' 
+                    : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
+        </div>
+      </form>
+
+      {/* List items */}
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5">
+        {todos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center text-slate-500 gap-2 select-none">
+            <Sparkles size={28} className="text-slate-600" />
+            <p className="text-xs max-w-[200px]">Belum ada tugas. Tulis sesuatu di atas untuk mulai fokus.</p>
+          </div>
+        ) : (
+          todos.map((todo) => {
+            const isActive = todo.id === activeTodoId;
+            return (
+              <div
+                key={todo.id}
+                onClick={() => !todo.completed && onSetActiveTodo(isActive ? null : todo.id)}
+                className={`flex items-start justify-between p-2.5 rounded border transition-all cursor-pointer ${
+                  todo.completed
+                    ? 'bg-slate-950/10 border-slate-800/50 opacity-55'
+                    : isActive
+                    ? 'bg-rose-500/10 border-rose-500/50 shadow-md ring-1 ring-rose-500/20'
+                    : 'bg-slate-800/20 border-slate-700/40 hover:border-slate-600 hover:bg-slate-800/30'
+                }`}
+              >
+                <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleTodo(todo.id);
+                      playBtnSound();
+                    }}
+                    className="p-0.5 rounded text-slate-500 hover:text-slate-300 transition-colors shrink-0 mt-0.5"
+                  >
+                    {todo.completed ? (
+                      <CheckCircle size={18} className="text-emerald-500" />
+                    ) : (
+                      <Circle size={18} className="text-slate-500 hover:text-rose-400" />
                     )}
-                >
-                    <button onClick={() => toggleTodo(t.id)} className="text-white/60 hover:text-white shrink-0">
-                        {t.completed ? <CheckCircle size={20} className="text-green-400" /> : <Circle size={20} />}
-                    </button>
-                    <span className={cn("flex-1 text-sm font-medium", t.completed && "line-through text-white/50")}>
-                        {t.text}
+                  </button>
+
+                  <div className="flex-1 min-w-0">
+                    <span 
+                      className={`text-sm block truncate ${
+                        todo.completed ? 'line-through text-slate-500' : 'text-slate-100 font-medium'
+                      }`}
+                    >
+                      {todo.text}
                     </span>
-                    <button onClick={() => deleteTodo(t.id)} className="text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                        <Trash2 size={16} />
-                    </button>
+                    <div className="mt-1">
+                      {renderTomatoes(todo.pomodorosEstimated, todo.pomodorosCompleted)}
+                    </div>
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
+
+                <div className="flex items-center gap-1 shrink-0 ml-2">
+                  {!todo.completed && (
+                    <span 
+                      className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                        isActive 
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' 
+                          : 'bg-slate-800 text-slate-400 border border-slate-700/50 hover:bg-slate-700'
+                      }`}
+                      title={isActive ? "Tugas ini aktif di timer" : "Aktifkan tugas ini"}
+                    >
+                      {isActive ? "Fokus 🎯" : "Pilih"}
+                    </span>
+                  )}
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteTodo(todo.id);
+                      playBtnSound();
+                    }}
+                    className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-rose-500/5 transition-colors"
+                    title="Hapus Tugas"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
-      {/* Countdown Timers Area */}
-      <div className="w-full md:w-80 flex flex-col bg-white/5 rounded-2xl border border-white/5 p-6 h-fit shrink-0">
-          <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <Calendar size={20} className="text-blue-400" /> Countdowns
-          </h2>
-
-          <form onSubmit={handleAddEvent} className="flex flex-col gap-3 mb-6">
-            <input
-              type="text"
-              value={newEventTitle}
-              onChange={e => setNewEventTitle(e.target.value)}
-              placeholder="Event name (e.g., Final Exam)"
-              className="bg-black/40 border-none rounded-lg px-3 py-2 text-sm text-white/90 placeholder-white/30 focus:outline-none"
-            />
-            <div className="flex gap-2">
-                <input
-                    type="date"
-                    value={newEventDate}
-                    onChange={e => setNewEventDate(e.target.value)}
-                    className="flex-1 bg-black/40 border-none rounded-lg px-3 py-2 text-sm text-white/90 focus:outline-none"
-                    min={getIsoDate(new Date())}
-                />
-                <button type="submit" className="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors">
-                    <Plus size={16} />
-                </button>
-            </div>
-          </form>
-
-          <div className="flex flex-col gap-3">
-            {events.length === 0 ? (
-                 <div className="text-center text-white/30 text-xs py-4">No upcoming events.</div>
-            ) : (
-                events.map(ev => {
-                    const daysLeft = calculateDaysLeft(ev.date);
-                    let badgeText = '';
-                    let badgeColor = '';
-                    if (daysLeft === 0) {
-                        badgeText = 'Today / D-DAY';
-                        badgeColor = 'bg-yellow-500 text-yellow-950 font-bold';
-                    } else if (daysLeft < 0) {
-                        badgeText = `H+${Math.abs(daysLeft)}`;
-                        badgeColor = 'bg-white/10 text-white/50';
-                    } else {
-                        badgeText = `H-${daysLeft}`;
-                        badgeColor = daysLeft <= 3 ? 'bg-red-500 text-white font-bold' : 'bg-blue-500/20 text-blue-300';
-                    }
-
-                    return (
-                        <div key={ev.id} className="p-3 bg-black/20 rounded-xl border border-white/10 group relative pt-4 flex flex-col items-center">
-                             <button onClick={() => deleteEvent(ev.id)} className="absolute top-2 right-2 text-white/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Trash2 size={12} />
-                            </button>
-                            <span className={cn("text-xs tracking-wider px-2 py-0.5 rounded-full mb-2", badgeColor)}>
-                                {badgeText}
-                            </span>
-                            <span className="font-semibold text-sm text-center mb-1">{ev.title}</span>
-                            <span className="text-[10px] text-white/50">{new Date(ev.date).toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric'})}</span>
-                        </div>
-                    );
-                })
-            )}
-          </div>
-      </div>
-      
+      {/* Footer stats */}
+      {todos.length > 0 && (
+        <div className="p-2 border-t border-slate-700/40 bg-slate-900/40 text-[11px] text-slate-400 flex justify-between shrink-0 font-medium px-3">
+          <span>Tugas: {todos.filter(t => t.completed).length} / {todos.length} selesai</span>
+          <span>Estimasi: {todos.reduce((acc, t) => acc + t.pomodorosEstimated, 0)} 🍅 total</span>
+        </div>
+      )}
     </div>
   );
-}
+};

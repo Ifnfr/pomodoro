@@ -1,104 +1,206 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut, 
+  User
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  query
+} from 'firebase/firestore';
+import { TimerSettings, TodoItem, StudySession } from '../types';
+import { LocalStorage } from './storage';
 
-const app = initializeApp(firebaseConfig);
-const getDatabase = () => {
-    const configId = (firebaseConfig as any).firestoreDatabaseId;
-    if (configId) return getFirestore(app, configId);
-    
-    // Fallback to the specific database ID ONLY if using the auto-provisioned workspace project
-    if (firebaseConfig.projectId === 'plexiform-notch-k8gvj') {
-        return getFirestore(app, 'ai-studio-9ec373ba-a904-4930-b2d3-e67a89457644');
-    }
-    
-    // Otherwise fallback to default database instance for custom projects
-    return getFirestore(app);
+// Default mock config in case config is missing
+const fallbackConfig = {
+  apiKey: "MOCK_KEY_DISCONNECTED",
+  authDomain: "mock-project.firebaseapp.com",
+  projectId: "mock-project",
+  storageBucket: "mock-project.appspot.com",
+  messagingSenderId: "12345",
+  appId: "1:12345:web:mockid"
 };
 
-export const db = getDatabase();
-export const auth = getAuth(app);
+// We will export a boolean indicating if Firebase is active & connected
+let isFirebaseEnabled = false;
+let app;
+let auth: ReturnType<typeof getAuth>;
+let db: ReturnType<typeof getFirestore>;
 
-let cachedAccessToken: string | null = null;
+// Check if we can load the actual configuration
+try {
+  // We use standard hardcoded values from the user's previously provided config
+  const firebaseConfig = {
+    apiKey: "AIzaSyD9TnuPsxAmgddHf5aL1bZuazgku8QudQc",
+    authDomain: "podomoro-app-84734.firebaseapp.com",
+    projectId: "podomoro-app-84734",
+    storageBucket: "podomoro-app-84734.firebasestorage.app",
+    messagingSenderId: "266486868410",
+    appId: "1:266486868410:web:b0ce0a234b8db6da8a5583",
+    measurementId: "G-RGDF6DXP1V"
+  };
 
-export const loginWithGoogle = async (useRedirect = false) => {
-    const provider = new GoogleAuthProvider();
-    provider.addScope('https://www.googleapis.com/auth/calendar.events');
-    provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-    
-    if (useRedirect) {
-        await signInWithRedirect(auth, provider);
-        return;
-    }
+  if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "MOCK_KEY_DISCONNECTED") {
+    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    auth = getAuth(app);
+    db = getFirestore(app);
+    isFirebaseEnabled = true;
+  } else {
+    app = initializeApp(fallbackConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (error) {
+  console.warn("Failed to initialize Firebase SDK, starting in offline-only mode:", error);
+  app = initializeApp(fallbackConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+}
 
-    try {
-        const result = await signInWithPopup(auth, provider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-            setCachedAccessToken(credential.accessToken);
-        }
-        return result;
-    } catch (error: any) {
-        console.error('Sign in error:', error);
-        
-        // Fallback to Redirect automatically if popup is blocked, closed, or restricted by third-party cookies
-        if (
-            error.code === 'auth/popup-blocked' || 
-            error.code === 'auth/popup-closed-by-user' || 
-            error.code === 'auth/network-request-failed' ||
-            error.code === 'auth/internal-error'
-        ) {
-            console.log('Popup blocked or failed, falling back to signInWithRedirect...');
-            await signInWithRedirect(auth, provider);
-            return;
-        }
-        
-        alert(`Login Gagal: ${error.message}\n\nPastikan Anda telah menyalin konfigurasi Firebase dari project "podomoro-app-84734" ke dalam file firebase-applet-config.json di aplikasi Anda, serta menambahkan domain Netlify Anda ke "Authorized domains" di Firebase Console.`);
-        throw error;
-    }
-};
+export { auth, db, isFirebaseEnabled };
 
-export const checkRedirectResult = async () => {
-    try {
-        const result = await getRedirectResult(auth);
-        if (result) {
-            const credential = GoogleAuthProvider.credentialFromResult(result);
-            if (credential?.accessToken) {
-                setCachedAccessToken(credential.accessToken);
-            }
-            return result;
-        }
-    } catch (error: any) {
-        console.error('Error processing redirect sign-in:', error);
-    }
-    return null;
-};
-
-export const logout = async () => {
-    await signOut(auth);
-    cachedAccessToken = null;
-};
-
-export const getAccessToken = async () => {
-    return cachedAccessToken;
-};
-
-export const setCachedAccessToken = (token: string) => {
-    cachedAccessToken = token;
-};
-
-
-export async function testConnection() {
+// Auth actions
+export async function loginWithGoogle(): Promise<User | null> {
+  if (!isFirebaseEnabled) {
+    throw new Error("Firebase tidak diaktifkan. Silakan periksa file konfigurasi.");
+  }
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firebase connected successfully");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Koneksi Firebase offline atau dibatasi di lingkungan sandbox ini. Jika Anda melihat ini di browser Anda, pastikan Firestore Database Anda sudah diaktifkan di Firebase Console.");
-    } else {
-      console.warn("Koneksi Firestore gagal saat pengujian awal:", error);
-    }
+    const result = await signInWithPopup(auth, provider);
+    return result.user;
+  } catch (error: unknown) {
+    console.error("Auth login failed:", error);
+    throw error;
   }
 }
-testConnection();
+
+export async function logoutUser(): Promise<void> {
+  if (!isFirebaseEnabled) return;
+  await signOut(auth);
+}
+
+// Resilient sync system that wraps Firestore queries and falls back to LocalStorage
+export const FirebaseSync = {
+  async saveSettings(userId: string, settings: TimerSettings): Promise<void> {
+    LocalStorage.saveSettings(settings); // Always save locally first (INV-03)
+    if (!isFirebaseEnabled) return;
+
+    try {
+      await setDoc(doc(db, 'users', userId, 'config', 'settings'), settings, { merge: true });
+    } catch (e) {
+      console.warn("Firestore saveSettings failed (operating offline):", e);
+    }
+  },
+
+  async loadSettings(userId: string): Promise<TimerSettings> {
+    const local = LocalStorage.getSettings();
+    if (!isFirebaseEnabled) return local;
+
+    try {
+      // Create a task that resolves or times out to avoid blocking UI
+      const promise = getDocs(query(collection(db, 'users', userId, 'config')));
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000));
+      
+      const result = await Promise.race([promise, timeout]);
+      if (result && !result.empty) {
+        const docSnap = result.docs.find(d => d.id === 'settings');
+        if (docSnap) {
+          const remoteSettings = docSnap.data() as TimerSettings;
+          LocalStorage.saveSettings(remoteSettings);
+          return remoteSettings;
+        }
+      }
+    } catch (e) {
+      console.warn("Firestore loadSettings failed (using local cache):", e);
+    }
+    return local;
+  },
+
+  async syncTodos(userId: string, localTodos: TodoItem[]): Promise<TodoItem[]> {
+    LocalStorage.saveTodos(localTodos); // Always save locally first (INV-03)
+    if (!isFirebaseEnabled) return localTodos;
+
+    try {
+      // 1. Upload local items
+      const userTodosRef = collection(db, 'users', userId, 'todos');
+      const uploadPromises = localTodos.map(todo => 
+        setDoc(doc(userTodosRef, todo.id), todo, { merge: true })
+      );
+      
+      await Promise.all(uploadPromises.slice(0, 10)); // throttle standard limits
+
+      // 2. Fetch remote items to merge
+      const q = query(userTodosRef);
+      const snapshot = await getDocs(q);
+      
+      const remoteTodos: TodoItem[] = [];
+      snapshot.forEach(doc => {
+        remoteTodos.push(doc.data() as TodoItem);
+      });
+
+      // Merge by ID, keeping the latest modifications
+      const mergedMap = new Map<string, TodoItem>();
+      localTodos.forEach(t => mergedMap.set(t.id, t));
+      remoteTodos.forEach(t => {
+        const existing = mergedMap.get(t.id);
+        if (!existing || t.createdAt > existing.createdAt) {
+          mergedMap.set(t.id, t);
+        }
+      });
+
+      const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+      LocalStorage.saveTodos(mergedList);
+      return mergedList;
+    } catch (e) {
+      console.warn("Firestore syncTodos failed (using local copy):", e);
+      return localTodos;
+    }
+  },
+
+  async addStudySession(userId: string, session: Omit<StudySession, 'id'>): Promise<StudySession> {
+    const newSession = LocalStorage.addSession(session); // Always save locally first (INV-03)
+    if (!isFirebaseEnabled) return newSession;
+
+    try {
+      const userSessionsRef = collection(db, 'users', userId, 'sessions');
+      await setDoc(doc(userSessionsRef, newSession.id), newSession);
+    } catch (e) {
+      console.warn("Firestore addStudySession failed (cached locally):", e);
+    }
+    return newSession;
+  },
+
+  async loadStudySessions(userId: string): Promise<StudySession[]> {
+    const local = LocalStorage.getSessions();
+    if (!isFirebaseEnabled) return local;
+
+    try {
+      const userSessionsRef = collection(db, 'users', userId, 'sessions');
+      const snapshot = await getDocs(userSessionsRef);
+      
+      const remoteSessions: StudySession[] = [];
+      snapshot.forEach(doc => {
+        remoteSessions.push(doc.data() as StudySession);
+      });
+
+      // Merge list uniquely by ID
+      const mergedMap = new Map<string, StudySession>();
+      local.forEach(s => mergedMap.set(s.id, s));
+      remoteSessions.forEach(s => mergedMap.set(s.id, s));
+
+      const mergedList = Array.from(mergedMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      LocalStorage.saveSessions(mergedList);
+      return mergedList;
+    } catch (e) {
+      console.warn("Firestore loadStudySessions failed (using local):", e);
+      return local;
+    }
+  }
+};

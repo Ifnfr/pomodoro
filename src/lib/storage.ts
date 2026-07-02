@@ -1,125 +1,120 @@
-import { Session } from '../types';
-import { db, auth } from './firebase';
-import { collection, doc, setDoc, getDocs, deleteDoc, query, onSnapshot } from 'firebase/firestore';
+import { TimerSettings, TodoItem, StudySession } from '../types';
+import { getLocalDateString } from './utils';
 
-const STORAGE_KEY = 'focus_popup_sessions';
+const STORAGE_KEYS = {
+  SETTINGS: 'focus_popup_settings',
+  TODOS: 'focus_popup_todos',
+  SESSIONS: 'focus_popup_sessions',
+};
 
-let cachedSessions: Session[] = [];
-let isListening = false;
-let sessionListeners: ((sessions: Session[]) => void)[] = [];
+const DEFAULT_SETTINGS: TimerSettings = {
+  focusTime: 25,
+  shortBreak: 5,
+  longBreak: 15,
+  longBreakInterval: 4,
+  soundVolume: 0.5,
+  soundTheme: 'soft',
+  autoStartBreaks: true,
+  autoStartPomodoros: false,
+  themeBackground: 'linear-gradient(to right, #0f172a, #1e1b4b)', // Starry Starry Night
+};
 
-// Fallback to local storage
-function getLocalSessions(): Session[] {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch (error) {
-    console.error('Failed to parse sessions from local storage', error);
+export const LocalStorage = {
+  getSettings(): TimerSettings {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      if (data) {
+        return { ...DEFAULT_SETTINGS, ...JSON.parse(data) };
+      }
+    } catch (e) {
+      console.warn("LocalStorage access failed:", e);
+    }
+    return DEFAULT_SETTINGS;
+  },
+
+  saveSettings(settings: TimerSettings) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    } catch (e) {
+      console.warn("LocalStorage write failed:", e);
+    }
+  },
+
+  getTodos(): TodoItem[] {
+    try {
+      const data = localStorage.getItem(STORAGE_KEYS.TODOS);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.warn("LocalStorage access failed:", e);
+    }
     return [];
-  }
-}
+  },
 
-// Subscribe to state changes from anywhere
-export function subscribeToSessions(callback: (sessions: Session[]) => void) {
-  sessionListeners.push(callback);
-  callback(getSessions()); // Send current state
-  return () => {
-    sessionListeners = sessionListeners.filter(l => l !== callback);
-  };
-}
-
-function notifyListeners() {
-  const current = getSessions();
-  sessionListeners.forEach(listener => listener(current));
-}
-
-// Set up Firebase listener
-auth.onAuthStateChanged((user) => {
-  if (user) {
-    if (!isListening) {
-      isListening = true;
-      const q = query(collection(db, `users/${user.uid}/sessions`));
-      onSnapshot(q, (snapshot) => {
-        const fbSessions: Session[] = [];
-        snapshot.forEach((doc) => {
-          fbSessions.push(doc.data() as Session);
-        });
-        cachedSessions = fbSessions;
-        // Optionally cache locally as backup
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(fbSessions));
-        notifyListeners();
-      }, (error) => {
-        handleFirestoreError(error, 'get', `users/${user.uid}/sessions`);
-      });
-    }
-  } else {
-    isListening = false;
-    cachedSessions = [];
-    notifyListeners();
-  }
-});
-
-export function getSessions(): Session[] {
-  if (auth.currentUser) {
-    return cachedSessions;
-  }
-  return getLocalSessions();
-}
-
-export async function addSession(session: Session) {
-  // Always give it an ID if it doesn't have one
-  const sessionWithId = { ...session, id: session.id || crypto.randomUUID() };
-
-  // Update locally right away for UI responsiveness
-  if (!auth.currentUser) {
-    const sessions = getLocalSessions();
-    sessions.push(sessionWithId);
+  saveTodos(todos: TodoItem[]) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-      notifyListeners();
-    } catch (error) {
-      console.error('Failed to save session to local storage', error);
+      localStorage.setItem(STORAGE_KEYS.TODOS, JSON.stringify(todos));
+    } catch (e) {
+      console.warn("LocalStorage write failed:", e);
     }
-  } else {
-    // If logged in, send to Firebase
+  },
+
+  getSessions(): StudySession[] {
     try {
-        sessionWithId.userId = auth.currentUser.uid;
-        await setDoc(doc(db, `users/${auth.currentUser.uid}/sessions`, sessionWithId.id), sessionWithId);
-        // Snapshot listener will update the local state implicitly shortly after
-    } catch (error) {
-        handleFirestoreError(error, 'write', `users/${auth.currentUser.uid}/sessions`);
+      const data = localStorage.getItem(STORAGE_KEYS.SESSIONS);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.warn("LocalStorage access failed:", e);
     }
+    return [];
+  },
+
+  saveSessions(sessions: StudySession[]) {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
+    } catch (e) {
+      console.warn("LocalStorage write failed:", e);
+    }
+  },
+
+  addSession(session: Omit<StudySession, 'id'>): StudySession {
+    const newSession: StudySession = {
+      ...session,
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+    };
+    const sessions = this.getSessions();
+    sessions.push(newSession);
+    this.saveSessions(sessions);
+    return newSession;
+  },
+
+  getDailyStats() {
+    const sessions = this.getSessions();
+    const todos = this.getTodos();
+    
+    // Group sessions by local date
+    const statsMap: Record<string, { duration: number; count: number; completedTasks: number }> = {};
+    
+    sessions.forEach(s => {
+      if (s.type === 'focus') {
+        const dateStr = getLocalDateString(s.timestamp);
+        if (!statsMap[dateStr]) {
+          statsMap[dateStr] = { duration: 0, count: 0, completedTasks: 0 };
+        }
+        statsMap[dateStr].duration += s.duration;
+        statsMap[dateStr].count += 1;
+      }
+    });
+
+    // We can also estimate completed tasks per day if they have dates, but for now we look at general stats
+    return Object.entries(statsMap).map(([date, data]) => ({
+      date,
+      focusDuration: data.duration,
+      pomodorosCount: data.count,
+      tasksCompleted: todos.filter(t => t.completed).length, // simple fallback
+    })).sort((a, b) => a.date.localeCompare(b.date));
   }
-}
-
-export function clearSessions(): void {
-  // If user wants to clear locally (not allowing fully clear firebase from app for safety unless fully implemented)
-  localStorage.removeItem(STORAGE_KEY);
-  cachedSessions = [];
-  notifyListeners();
-}
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: unknown, operationType: string, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // In production, might not throw here to avoid crashing UI for unhandled boundary
-}
+};

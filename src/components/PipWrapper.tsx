@@ -1,97 +1,161 @@
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { PictureInPicture } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { MonitorPlay, Play, Pause, Square } from 'lucide-react';
 
-export function PipWrapper({ isPip, onClose, children }: { isPip: boolean, onClose: () => void, children: React.ReactNode }) {
-  const [pipContainer, setPipContainer] = useState<HTMLElement | null>(null);
+interface PipWrapperProps {
+  secondsRemaining: number;
+  timerMode: 'focus' | 'shortBreak' | 'longBreak';
+  isActive: boolean;
+  onTogglePlay: () => void;
+  onReset: () => void;
+}
 
+export const PipWrapper: React.FC<PipWrapperProps> = ({
+  secondsRemaining,
+  timerMode,
+  isActive,
+  onTogglePlay,
+  onReset,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isInPip, setIsInPip] = useState(false);
+  const [pipSupported, setPipSupported] = useState(true);
+
+  // Initialize hidden canvas and video elements
   useEffect(() => {
-    if (!isPip) {
-      if (pipContainer) setPipContainer(null);
+    // Check support
+    if (!document.pictureInPictureEnabled) {
+      setPipSupported(false);
       return;
     }
 
-    let pipWindow: any = null;
-    const startPip = async () => {
-      try {
-        if (!('documentPictureInPicture' in window)) {
-          alert('Focus Popup (Always on Top) is not supported in this browser. Please use Chrome/Edge.');
-          onClose();
-          return;
-        }
+    const canvas = document.createElement('canvas');
+    canvas.width = 300;
+    canvas.height = 300;
+    canvasRef.current = canvas;
 
-        pipWindow = await (window as any).documentPictureInPicture.requestWindow({
-          width: 440,
-          height: 600,
-        });
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    const stream = (canvas as any).captureStream ? (canvas as any).captureStream(10) : null; // 10 fps is plenty
+    video.srcObject = stream;
+    videoRef.current = video;
 
-        [...document.styleSheets].forEach((styleSheet) => {
-          try {
-            const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
-            const style = document.createElement('style');
-            style.textContent = cssRules;
-            pipWindow.document.head.appendChild(style);
-          } catch (e) {
-            const link = document.createElement('link');
-            link.rel = 'stylesheet';
-            link.type = styleSheet.type;
-            link.media = styleSheet.media.mediaText;
-            link.href = styleSheet.href;
-            pipWindow.document.head.appendChild(link);
-          }
-        });
-
-        const newContainer = pipWindow.document.createElement('div');
-        newContainer.id = "pip-root";
-        newContainer.className = "h-screen w-full bg-[#0a0a0a] text-white"; 
-        pipWindow.document.body.appendChild(newContainer);
-        setPipContainer(newContainer);
-
-        pipWindow.addEventListener("pagehide", () => {
-          onClose();
-        });
-      } catch (err) {
-        console.error("PIP Error:", err);
-        alert('Failed to enter Focus Popup mode. ' + (err as any)?.message);
-        onClose();
-      }
-    };
-    startPip();
+    const handleLeave = () => setIsInPip(false);
+    video.addEventListener('leavepictureinpicture', handleLeave);
 
     return () => {
-      if (pipWindow) {
-        pipWindow.close();
+      video.removeEventListener('leavepictureinpicture', handleLeave);
+      video.pause();
+      if (video.srcObject) {
+        const tracks = (video.srcObject as MediaStream).getTracks();
+        tracks.forEach(t => t.stop());
       }
     };
-  }, [isPip]);
+  }, []);
 
-  if (isPip && pipContainer) {
-    return (
-      <>
-        {createPortal(children, pipContainer)}
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-black/40 backdrop-blur-sm z-50 relative h-full">
-          <PictureInPicture size={48} className="text-white/50 mb-4" />
-          <h2 className="text-xl font-bold mb-2">Focus Popup Active</h2>
-          <p className="text-sm text-white/50 mb-6">Your app is running in an always-on-top window.</p>
-          <button 
-            onClick={onClose}
-            className="px-6 py-2 bg-blue-500 hover:bg-blue-600 rounded-full font-medium transition-colors"
+  // Redraw canvas whenever timer ticks, mode changes, or play state changes
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !isInPip) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Draw background
+    ctx.fillStyle = '#0f172a'; // Deep Slate
+    ctx.fillRect(0, 0, 300, 300);
+
+    // Draw circular outer ring
+    const totalDuration = timerMode === 'focus' ? 25 * 60 : timerMode === 'shortBreak' ? 5 * 60 : 15 * 60;
+    const progress = secondsRemaining / totalDuration;
+
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#1e293b'; // Slate background ring
+    ctx.beginPath();
+    ctx.arc(150, 150, 110, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Draw progress arc
+    ctx.lineWidth = 14;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = timerMode === 'focus' ? '#f43f5e' : '#10b981'; // Rose for focus, Emerald for break
+    ctx.beginPath();
+    ctx.arc(150, 150, 110, -0.5 * Math.PI, (-0.5 * Math.PI) + (2 * Math.PI * progress));
+    ctx.stroke();
+
+    // Draw Text - Timer Mode
+    ctx.fillStyle = '#94a3b8'; // text-slate-400
+    ctx.font = 'bold 20px system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    const modeText = timerMode === 'focus' ? 'FOKUS' : timerMode === 'shortBreak' ? 'BREAK' : 'LONG BREAK';
+    ctx.fillText(modeText, 150, 95);
+
+    // Draw Text - Time Remaining
+    const minutes = Math.floor(secondsRemaining / 60).toString().padStart(2, '0');
+    const seconds = (secondsRemaining % 60).toString().padStart(2, '0');
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 64px system-ui, -apple-system, sans-serif';
+    ctx.fillText(`${minutes}:${seconds}`, 150, 170);
+
+    // Draw Text - Active State
+    ctx.fillStyle = isActive ? '#10b981' : '#f59e0b'; // Green or Amber
+    ctx.font = '16px system-ui, -apple-system, sans-serif';
+    ctx.fillText(isActive ? 'BERJALAN' : 'DIJEDA', 150, 220);
+
+  }, [secondsRemaining, timerMode, isActive, isInPip]);
+
+  const togglePip = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    try {
+      if (!isInPip) {
+        await video.play();
+        await video.requestPictureInPicture();
+        setIsInPip(true);
+      } else {
+        await document.exitPictureInPicture();
+        setIsInPip(false);
+      }
+    } catch (err) {
+      console.error('Gagal mengakses Picture in Picture:', err);
+    }
+  };
+
+  if (!pipSupported) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60 shadow-inner">
+      <button
+        onClick={togglePip}
+        title="Floating Picture-in-Picture"
+        className={`p-2 rounded-md hover:bg-slate-700 transition-all ${
+          isInPip ? 'text-rose-400 bg-rose-500/10' : 'text-slate-300'
+        }`}
+      >
+        <MonitorPlay size={16} />
+      </button>
+
+      {isInPip && (
+        <>
+          <span className="h-4 w-[1px] bg-slate-700 mx-0.5"></span>
+          <button
+            onClick={onTogglePlay}
+            className={`p-1.5 rounded-md hover:bg-slate-700 text-slate-300 transition-colors`}
+            title={isActive ? 'Jeda' : 'Mulai'}
           >
-            Return to Main Window
+            {isActive ? <Pause size={14} /> : <Play size={14} />}
           </button>
-        </div>
-      </>
-    );
-  }
-
-  if (isPip && !pipContainer) {
-    // Render a placeholder or nothing while opening
-    return (
-      <div className="flex-1 flex items-center justify-center relative z-50">
-        <div className="animate-pulse">Opening Pop Out window...</div>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
-}
+          <button
+            onClick={onReset}
+            className="p-1.5 rounded-md hover:bg-slate-700 text-slate-300 transition-colors"
+            title="Reset"
+          >
+            <Square size={14} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+};

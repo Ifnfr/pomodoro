@@ -1,472 +1,319 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, Volume2, VolumeX, Edit3, Square, Flame } from 'lucide-react';
-import { Mode, Session } from '../types';
-import { addSession, getSessions, subscribeToSessions } from '../lib/storage';
-import { cn, getIsoDate, sendNotification, calculateStreak } from '../lib/utils';
-import { playChime } from '../lib/audio';
-import { addEventToCalendar } from '../lib/calendar';
+import React, { useEffect, useRef } from 'react';
+import { TimerSettings } from '../types';
+import { Play, Pause, RefreshCw, Volume2, VolumeX, SkipForward } from 'lucide-react';
+import { playAlarm, playTick, playBtnSound } from '../lib/audio';
+import { formatTime } from '../lib/utils';
+import { PipWrapper } from './PipWrapper';
 
-const MODE_DURATIONS: Record<Mode, number> = {
-  pomodoro: 25 * 60,
-  shortBreak: 5 * 60,
-  longBreak: 15 * 60,
-};
+interface TimerProps {
+  settings: TimerSettings;
+  activeTodoText: string | null;
+  onSessionComplete: (type: 'focus' | 'shortBreak' | 'longBreak', duration: number) => void;
+  secondsRemaining: number;
+  setSecondsRemaining: React.Dispatch<React.SetStateAction<number>>;
+  timerMode: 'focus' | 'shortBreak' | 'longBreak';
+  setTimerMode: React.Dispatch<React.SetStateAction<'focus' | 'shortBreak' | 'longBreak'>>;
+  isActive: boolean;
+  setIsActive: React.Dispatch<React.SetStateAction<boolean>>;
+  pomodorosCompleted: number;
+  soundEnabled: boolean;
+  setSoundEnabled: (enabled: boolean) => void;
+}
 
-const MODE_LABELS: Record<Mode, string> = {
-  pomodoro: 'Pomodoro',
-  shortBreak: 'Short Break',
-  longBreak: 'Long Break',
-};
+export const Timer: React.FC<TimerProps> = ({
+  settings,
+  activeTodoText,
+  onSessionComplete,
+  secondsRemaining,
+  setSecondsRemaining,
+  timerMode,
+  setTimerMode,
+  isActive,
+  setIsActive,
+  pomodorosCompleted,
+  soundEnabled,
+  setSoundEnabled,
+}) => {
+  const lastTickTimeRef = useRef<number | null>(null);
 
-export function Timer({ themeColor = 'blue' }: { themeColor?: string }) {
-  const [pomodoroDurationInit] = useState<number>(() => {
-    const saved = localStorage.getItem('focus_pomodoro_duration');
-    return saved ? parseInt(saved, 10) : 25;
-  });
-
-  const [mode, setMode] = useState<Mode>('pomodoro');
-  const [timeLeft, setTimeLeft] = useState(pomodoroDurationInit * 60);
-  const [isActive, setIsActive] = useState(false);
-  const [topic, setTopic] = useState('');
-  const [soundEnabled, setSoundEnabled] = useState(() => {
-    return localStorage.getItem('focus_sound') !== 'false';
-  });
-  
-  // Daily Goal state
-  const [dailyGoalMinutes, setDailyGoalMinutes] = useState(() => {
-    const saved = localStorage.getItem('focus_daily_goal_minutes');
-    return saved ? parseInt(saved, 10) : 120; // Default 2 hours
-  });
-  const [isEditingGoal, setIsEditingGoal] = useState(false);
-  const [goalInput, setGoalInput] = useState(String(dailyGoalMinutes));
-  
-  // Today's completed minutes
-  const [todayCompletedMinutes, setTodayCompletedMinutes] = useState(0);
-  const [currentStreak, setCurrentStreak] = useState(0);
-
-  const startTimeRef = useRef<number | null>(null);
-
-  const existingTopics = Array.from(
-    new Set(
-      getSessions()
-        .filter(s => s.topic)
-        .map(s => s.topic as string)
-    )
-  );
-
-  const [pomodoroDuration, setPomodoroDuration] = useState<number>(() => {
-    const saved = localStorage.getItem('focus_pomodoro_duration');
-    return saved ? parseInt(saved, 10) : 25;
-  });
-
-  const getDuration = (m: Mode) => {
-    return m === 'pomodoro' ? pomodoroDuration * 60 : MODE_DURATIONS[m];
+  // Determine current duration based on settings & mode
+  const getDuration = (mode: typeof timerMode) => {
+    if (mode === 'focus') return settings.focusTime * 60;
+    if (mode === 'shortBreak') return settings.shortBreak * 60;
+    return settings.longBreak * 60;
   };
 
-  const [isStrict, setIsStrict] = useState(() => localStorage.getItem('pomodoro_strict_mode') !== 'false');
+  const totalDuration = getDuration(timerMode);
 
+  // Sync timer remaining if settings change and timer is NOT running
   useEffect(() => {
-    const handleStrictChange = () => setIsStrict(localStorage.getItem('pomodoro_strict_mode') !== 'false');
-    window.addEventListener('strict_mode_change', handleStrictChange);
-    return () => window.removeEventListener('strict_mode_change', handleStrictChange);
-  }, []);
+    if (!isActive) {
+      setSecondsRemaining(totalDuration);
+    }
+  }, [settings.focusTime, settings.shortBreak, settings.longBreak, timerMode, isActive, totalDuration, setSecondsRemaining]);
 
+  // Main tick timer loop with delta-time compensation for background tab throttling
   useEffect(() => {
-    localStorage.setItem('focus_sound', String(soundEnabled));
-  }, [soundEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem('focus_daily_goal_minutes', String(dailyGoalMinutes));
-  }, [dailyGoalMinutes]);
-
-  useEffect(() => {
-    const unsub = subscribeToSessions((sessions) => {
-      const todayStr = getIsoDate(new Date());
-      const todayMins = sessions
-        .filter(s => s.mode === 'pomodoro' && getIsoDate(new Date(s.timestamp)) === todayStr)
-        .reduce((sum, s) => sum + s.durationMinutes, 0);
-      setTodayCompletedMinutes(todayMins);
-      setCurrentStreak(calculateStreak(sessions));
-    });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
+    let timerId: NodeJS.Timeout | null = null;
 
     if (isActive) {
-      interval = setInterval(() => {
-        setTimeLeft((time) => time - 1);
+      lastTickTimeRef.current = Date.now();
+      timerId = setInterval(() => {
+        const now = Date.now();
+        const delta = lastTickTimeRef.current ? Math.round((now - lastTickTimeRef.current) / 1000) : 1;
+        lastTickTimeRef.current = now;
+
+        setSecondsRemaining((prev) => {
+          if (prev <= delta) {
+            // Timer complete!
+            setIsActive(false);
+            handleTimerComplete();
+            return 0;
+          }
+          if (soundEnabled) {
+            playTick(settings.soundVolume);
+          }
+          return prev - delta;
+        });
       }, 1000);
+    } else {
+      lastTickTimeRef.current = null;
     }
 
-    return () => clearInterval(interval);
-  }, [isActive]);
+    return () => {
+      if (timerId) clearInterval(timerId);
+    };
+  }, [isActive, timerMode, soundEnabled, settings.soundVolume]);
 
-  const hasPlayedAlarmRef = useRef(false);
-  useEffect(() => {
-    if (isActive && timeLeft === 0 && !hasPlayedAlarmRef.current) {
-      hasPlayedAlarmRef.current = true;
-      if (soundEnabled) {
-        playChime();
-      }
+  const handleTimerComplete = () => {
+    // 1. Play synthesized completion sound
+    playAlarm(settings.soundTheme, settings.soundVolume);
 
-      if (mode === 'pomodoro') {
-        sendNotification('Pomodoro Completed!', 'Great job focusing. Time to take a break or keep going.');
-      } else {
-        sendNotification('Break Finished!', 'Time to get back to work or rest more.');
+    // 2. Report completed session
+    onSessionComplete(timerMode, totalDuration);
+
+    // 3. Cycle modes automatically
+    if (timerMode === 'focus') {
+      const isNextLongBreak = (pomodorosCompleted + 1) % settings.longBreakInterval === 0;
+      const nextMode = isNextLongBreak ? 'longBreak' : 'shortBreak';
+      setTimerMode(nextMode);
+      setSecondsRemaining(getDuration(nextMode));
+      if (settings.autoStartBreaks) {
+        setTimeout(() => setIsActive(true), 1000);
       }
-    } else if (!isActive || timeLeft > 0) {
-      hasPlayedAlarmRef.current = false;
+    } else {
+      setTimerMode('focus');
+      setSecondsRemaining(getDuration('focus'));
+      if (settings.autoStartPomodoros) {
+        setTimeout(() => setIsActive(true), 1000);
+      }
     }
-  }, [isActive, timeLeft, mode, soundEnabled]);
+  };
 
-  const toggleTimer = () => {
-    if (!isActive) {
-      startTimeRef.current = Date.now();
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
-    }
+  const togglePlay = () => {
+    playBtnSound();
     setIsActive(!isActive);
   };
 
   const resetTimer = () => {
+    playBtnSound();
     setIsActive(false);
-    setTimeLeft(getDuration(mode));
+    setSecondsRemaining(totalDuration);
   };
 
-  const changeMode = (newMode: Mode) => {
+  const skipTimer = () => {
+    playBtnSound();
     setIsActive(false);
-    setMode(newMode);
-    setTimeLeft(getDuration(newMode));
-  };
-
-  const changePomodoroDuration = (mins: number) => {
-    setPomodoroDuration(mins);
-    localStorage.setItem('focus_pomodoro_duration', String(mins));
-    if (mode === 'pomodoro' && !isActive) {
-      setTimeLeft(mins * 60);
-    }
-  };
-
-  const handleStop = () => {
-    if (!isActive) return;
-    setIsActive(false);
-
-    const timeSpentSeconds = getDuration(mode) - timeLeft;
-    if (timeSpentSeconds > 0 && mode === 'pomodoro') {
-      const durationMinutes = timeSpentSeconds / 60;
-      addSession({
-        id: crypto.randomUUID(),
-        timestamp: startTimeRef.current || Date.now(),
-        durationMinutes: durationMinutes,
-        mode: 'pomodoro',
-        ...(topic.trim() ? { topic: topic.trim() } : {}),
-      });
-
-      // Sync to calendar
-      addEventToCalendar(
-        topic.trim() ? `Focus: ${topic.trim()}` : `Deep Work Session (Pomodoro)`,
-        Math.max(1, Math.round(durationMinutes)),
-        startTimeRef.current || Date.now()
-      );
-    }
-
-    if (timeLeft <= 0) {
-      // Completed successfully (with or without overtime), switch to the next mode automatically
-      const nextMode = mode === 'pomodoro' ? 'shortBreak' : 'pomodoro';
-      setMode(nextMode);
-      setTimeLeft(getDuration(nextMode));
-    } else {
-      // Aborted before finishing, just reset the current mode
-      setTimeLeft(getDuration(mode));
-    }
     
-    startTimeRef.current = null;
-  };
-
-  const handleSaveGoal = () => {
-    const parsed = parseInt(goalInput, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      setDailyGoalMinutes(parsed);
+    // Cycle modes
+    if (timerMode === 'focus') {
+      const isNextLongBreak = pomodorosCompleted % settings.longBreakInterval === 0 && pomodorosCompleted > 0;
+      const nextMode = isNextLongBreak ? 'longBreak' : 'shortBreak';
+      setTimerMode(nextMode);
+      setSecondsRemaining(getDuration(nextMode));
     } else {
-      setGoalInput(String(dailyGoalMinutes));
+      setTimerMode('focus');
+      setSecondsRemaining(getDuration('focus'));
     }
-    setIsEditingGoal(false);
   };
 
-  const isOvertime = timeLeft < 0;
-  const absTimeLeft = Math.abs(timeLeft);
-  const minutes = Math.floor(absTimeLeft / 60);
-  const seconds = absTimeLeft % 60;
-
-  // Calculate session progress
-  const totalDuration = getDuration(mode);
-  const progress = Math.max(0, Math.min(100, (timeLeft / totalDuration) * 100));
-  const strokeDasharray = 816.8; // 2 * pi * r (130)
-  const strokeDashoffset = strokeDasharray - (progress / 100) * strokeDasharray;
-
-  // Calculate daily goal progress (including current active pomodoro time)
-  let currentActivePomodoroMins = 0;
-  if (isActive && mode === 'pomodoro') {
-    currentActivePomodoroMins = (totalDuration - timeLeft) / 60;
-  }
-  const currentTotalTodayMins = todayCompletedMinutes + currentActivePomodoroMins;
-  const goalProgressRaw = (currentTotalTodayMins / dailyGoalMinutes) * 100;
-  const goalProgress = Math.min(goalProgressRaw, 100);
-  const goalDasharray = 911; // 2 * pi * r (145)
-  const goalDashoffset = goalDasharray - (goalProgress / 100) * goalDasharray;
-
-  const THEME_COLORS: Record<string, { stroke: string, strokeIdle: string, outerStroke: string, textObj: string, textIdle: string, textBold: string, button: string, buttonHover: string, shadow: string, focusBorder: string, tagBg: string, tagBorder: string, tagTextActive: string }> = {
-    blue: { stroke: 'stroke-blue-500', strokeIdle: 'stroke-blue-400', outerStroke: 'stroke-blue-500/30', textObj: 'text-blue-500', textIdle: 'text-blue-400', textBold: 'text-blue-400', button: 'bg-blue-600', buttonHover: 'hover:bg-blue-500', shadow: 'shadow-blue-900/20', focusBorder: 'focus:border-blue-500/50', tagBg: 'bg-blue-500/20', tagBorder: 'border-blue-500/50', tagTextActive: 'text-blue-300' },
-    yellow: { stroke: 'stroke-yellow-500', strokeIdle: 'stroke-yellow-400', outerStroke: 'stroke-yellow-500/30', textObj: 'text-yellow-500', textIdle: 'text-yellow-400', textBold: 'text-yellow-400', button: 'bg-yellow-600', buttonHover: 'hover:bg-yellow-500', shadow: 'shadow-yellow-900/20', focusBorder: 'focus:border-yellow-500/50', tagBg: 'bg-yellow-500/20', tagBorder: 'border-yellow-500/50', tagTextActive: 'text-yellow-300' },
-    amber: { stroke: 'stroke-amber-500', strokeIdle: 'stroke-amber-400', outerStroke: 'stroke-amber-500/30', textObj: 'text-amber-500', textIdle: 'text-amber-400', textBold: 'text-amber-400', button: 'bg-amber-600', buttonHover: 'hover:bg-amber-500', shadow: 'shadow-amber-900/20', focusBorder: 'focus:border-amber-500/50', tagBg: 'bg-amber-500/20', tagBorder: 'border-amber-500/50', tagTextActive: 'text-amber-300' },
-    slate: { stroke: 'stroke-slate-400', strokeIdle: 'stroke-slate-300', outerStroke: 'stroke-slate-400/30', textObj: 'text-slate-400', textIdle: 'text-slate-300', textBold: 'text-slate-300', button: 'bg-slate-500', buttonHover: 'hover:bg-slate-400', shadow: 'shadow-slate-900/20', focusBorder: 'focus:border-slate-500/50', tagBg: 'bg-slate-500/20', tagBorder: 'border-slate-500/50', tagTextActive: 'text-slate-300' },
-    orange: { stroke: 'stroke-orange-500', strokeIdle: 'stroke-orange-400', outerStroke: 'stroke-orange-500/30', textObj: 'text-orange-500', textIdle: 'text-orange-400', textBold: 'text-orange-400', button: 'bg-orange-600', buttonHover: 'hover:bg-orange-500', shadow: 'shadow-orange-900/20', focusBorder: 'focus:border-orange-500/50', tagBg: 'bg-orange-500/20', tagBorder: 'border-orange-500/50', tagTextActive: 'text-orange-300' },
-  };
-
-  const theme = THEME_COLORS[themeColor] || THEME_COLORS.blue;
-
-  const formatMin = (m: number) => {
-    const h = Math.floor(m / 60);
-    const mins = Math.floor(m % 60);
-    if (h > 0 && mins > 0) return `${h}h ${mins}m`;
-    if (h > 0) return `${h}h`;
-    return `${mins}m`;
-  };
+  // SVG Progress calculation
+  const strokeDashoffset = 502 - (502 * secondsRemaining) / totalDuration;
 
   return (
-    <div className="flex flex-col items-center justify-center p-6 h-full text-white overflow-y-auto scrollbar-hide relative w-full">
-      
-      {/* Streak Indicator */}
-      {currentStreak > 0 && (
-        <div className="absolute top-6 right-6 flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full shadow-sm font-medium" title={`${currentStreak} day streak`}>
-          <Flame size={14} className="fill-current animate-pulse" />
-          <span className="text-xs">{currentStreak}</span>
-        </div>
-      )}
-
-      {/* Mode Selectors */}
-      <div className="flex gap-4 mb-4 shrink-0">
-        {(Object.keys(MODE_DURATIONS) as Mode[]).map((m) => (
-          <button
-            key={m}
-            onClick={() => changeMode(m)}
-            className={cn(
-              "text-[10px] uppercase tracking-[0.2em] transition-opacity",
-              mode === m 
-                ? `${theme.textBold} font-bold opacity-100` 
-                : "opacity-30 hover:opacity-100"
-            )}
-          >
-            {MODE_LABELS[m]}
-          </button>
-        ))}
+    <div className="flex flex-col items-center justify-center p-4 text-slate-100 h-full select-none">
+      {/* Timer Modes Buttons */}
+      <div className="flex gap-1.5 bg-slate-950/40 p-1 rounded-lg border border-slate-800/80 mb-5 max-w-full overflow-x-auto">
+        <button
+          onClick={() => {
+            playBtnSound();
+            setTimerMode('focus');
+            setIsActive(false);
+            setSecondsRemaining(settings.focusTime * 60);
+          }}
+          className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+            timerMode === 'focus'
+              ? 'bg-rose-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Sesi Fokus 🎯
+        </button>
+        <button
+          onClick={() => {
+            playBtnSound();
+            setTimerMode('shortBreak');
+            setIsActive(false);
+            setSecondsRemaining(settings.shortBreak * 60);
+          }}
+          className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+            timerMode === 'shortBreak'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Break Singkat ☕
+        </button>
+        <button
+          onClick={() => {
+            playBtnSound();
+            setTimerMode('longBreak');
+            setIsActive(false);
+            setSecondsRemaining(settings.longBreak * 60);
+          }}
+          className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+            timerMode === 'longBreak'
+              ? 'bg-sky-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          Break Panjang 🌴
+        </button>
       </div>
 
-      {/* Preset Duration Selector */}
-      <div className="h-8 mb-6 flex items-center justify-center shrink-0">
-        {mode === 'pomodoro' ? (
-          <div className="flex bg-white/5 rounded-full p-0.5 backdrop-blur-sm border border-white/5">
-            {[25, 50, 90].map(mins => (
-              <button
-                key={mins}
-                disabled={isActive}
-                onClick={() => changePomodoroDuration(mins)}
-                className={cn(
-                  "px-4 py-1 text-xs font-semibold rounded-full transition-all disabled:opacity-50 disabled:cursor-not-allowed",
-                  pomodoroDuration === mins
-                    ? `bg-white/10 ${theme.textBold} shadow-sm`
-                    : "text-white/40 hover:text-white/80 hover:bg-white/5"
-                )}
-              >
-                {mins}m
-              </button>
-            ))}
-          </div>
-        ) : (
-          <div className="flex p-0.5" />
-        )}
-      </div>
-
-      {/* Timer Circle */}
-      <div className="relative flex items-center justify-center mb-8 w-[320px] h-[320px] shrink-0">
-        <svg className="absolute w-[320px] h-[320px] transform -rotate-90">
-          {/* Daily Goal Background */}
-          {isActive && (
-            <circle
-              cx="160"
-              cy="160"
-              r="145"
-              className="stroke-white/[0.03]"
-              strokeWidth="2"
-              fill="transparent"
-            />
-          )}
-          {/* Daily Goal Progress */}
-          {isActive && (
-            <circle
-              cx="160"
-              cy="160"
-              r="145"
-              className={cn("transition-all duration-1000", theme.outerStroke)}
-              strokeWidth="2"
-              strokeLinecap="round"
-              fill="transparent"
-              style={{ strokeDasharray: goalDasharray, strokeDashoffset: goalDashoffset }}
-            />
-          )}
-
-          {/* Session Timer Background */}
+      {/* SVG Countdown Display */}
+      <div className="relative w-48 h-48 flex items-center justify-center mb-6">
+        <svg className="absolute w-full h-full transform -rotate-90">
+          {/* Background circle */}
           <circle
-            cx="160"
-            cy="160"
-            r="130"
-            className="stroke-white/5"
-            strokeWidth="4"
+            cx="96"
+            cy="96"
+            r="80"
+            className="stroke-slate-800"
+            strokeWidth="8"
             fill="transparent"
           />
-          {/* Session Timer Progress */}
+          {/* Progress circle */}
           <circle
-            cx="160"
-            cy="160"
-            r="130"
-            className={cn(
-              "transition-colors duration-500",
-              mode === 'pomodoro' ? theme.stroke : theme.strokeIdle
-            )}
-            strokeWidth="4"
-            strokeLinecap="round"
+            cx="96"
+            cy="96"
+            r="80"
+            stroke={timerMode === 'focus' ? '#f43f5e' : timerMode === 'shortBreak' ? '#10b981' : '#0ea5e9'}
+            strokeWidth="8"
             fill="transparent"
-            style={{ 
-              strokeDasharray, 
-              strokeDashoffset, 
-              transition: 'stroke-dashoffset 1s linear, stroke 0.5s ease' 
-            }}
+            strokeDasharray="502"
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className="transition-all duration-300"
           />
         </svg>
 
-        <div className="absolute flex flex-col items-center w-full z-10 pointer-events-none">
-          {/* Daily Goal Header */}
-          <div className="flex flex-col items-center mb-2 group h-12 justify-end pointer-events-auto">
-            <span className="text-[10px] uppercase tracking-widest text-white/40 mb-1">Daily Goal</span>
-            {isEditingGoal ? (
-              <div className="flex items-center gap-2 bg-black/40 backdrop-blur-md rounded-full px-3 py-1">
-                <input 
-                  autoFocus
-                  type="number" 
-                  value={goalInput}
-                  onChange={e => setGoalInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSaveGoal()}
-                  onBlur={handleSaveGoal}
-                  className="w-16 bg-transparent text-center font-medium text-white/90 focus:outline-none text-sm"
-                  min="1"
-                />
-                <span className="text-xs text-white/50 font-medium">min</span>
-              </div>
-            ) : (
-              <div 
-                onClick={() => setIsEditingGoal(true)}
-                className="flex items-center gap-2 cursor-pointer hover:bg-black/30 backdrop-blur-md rounded-full px-3 py-1 transition-colors"
-              >
-                <span className="text-sm font-medium text-white/90">
-                  {formatMin(currentTotalTodayMins)} / {formatMin(dailyGoalMinutes)}
-                </span>
-                <Edit3 size={12} className="text-white/30 group-hover:text-white/70" />
-              </div>
-            )}
-          </div>
-
-          <span className="text-7xl font-light tracking-tighter tabular-nums text-white">
-            {isOvertime ? '+' : ''}{String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+        {/* Big Counter text */}
+        <div className="flex flex-col items-center justify-center z-10 text-center">
+          <span className="text-4xl font-bold tracking-tight font-mono tabular-nums leading-none">
+            {formatTime(secondsRemaining)}
           </span>
-          <div className="h-12 w-full max-w-[200px] pointer-events-auto flex items-center justify-center mt-2">
-            {/* The input gets moved here so it's inside the bottom half of the circle */}
-            {mode === 'pomodoro' && (
-              <div className="w-full flex-col flex items-center group/input">
-                <input
-                  type="text"
-                  placeholder="Focusing on..."
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  disabled={isActive}
-                  className={`w-full bg-transparent border-none rounded-lg px-2 py-1 text-sm text-center text-white/80 placeholder-white/20 focus:outline-none focus:ring-0 ${theme.focusBorder} transition-colors disabled:opacity-50`}
-                />
-                <div className={`h-[1px] w-1/2 bg-white/10 transition-all group-focus-within/input:w-3/4 group-focus-within/input:bg-white/30`}></div>
-              </div>
-            )}
-          </div>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
+            {timerMode === 'focus' ? 'FOKUS' : 'ISTIRAHAT'}
+          </span>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="flex flex-col items-center gap-6 shrink-0 z-20">
-        {mode === 'pomodoro' && existingTopics.length > 0 && (
-          <div className="w-full max-w-[320px] flex flex-col items-center gap-3">
-            <div className="flex flex-wrap justify-center gap-2 max-h-[80px] overflow-y-auto scrollbar-hide w-full px-2">
-              {existingTopics.map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTopic(topic === t ? '' : t)}
-                  disabled={isActive}
-                  className={cn(
-                    "text-[10px] uppercase font-medium tracking-wider px-2.5 py-1 rounded-full border transition-colors disabled:opacity-50",
-                    topic === t
-                      ? `${theme.tagBg} ${theme.tagBorder} ${theme.tagTextActive}`
-                      : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:border-white/20 hover:bg-white/10"
-                  )}
-                >
-                  {t}
-                </button>
-              ))}
+      {/* Active Task Name */}
+      {timerMode === 'focus' && (
+        <div className="h-6 mb-4 max-w-full px-4 text-center">
+          {activeTodoText ? (
+            <div className="text-xs text-rose-300 font-medium truncate max-w-[240px] bg-rose-950/20 px-3 py-1 rounded-full border border-rose-900/30">
+              Mengerjakan: <span className="font-bold">"{activeTodoText}"</span>
             </div>
-          </div>
-        )}
-
-        <div className="flex items-center gap-4">
-          <button
-            onClick={resetTimer}
-            className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"
-          >
-            <RotateCcw size={16} /> <span className="text-sm">Reset</span>
-          </button>
-          
-          <button
-            onClick={timeLeft <= 0 ? handleStop : toggleTimer}
-            disabled={isActive && isStrict && timeLeft > 0}
-            className={`px-8 py-3 ${theme.button} ${theme.buttonHover} text-white rounded-xl font-semibold transition-colors shadow-lg ${theme.shadow} flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${timeLeft <= 0 ? '!bg-green-600 hover:!bg-green-500 shadow-green-900/20' : ''}`}
-          >
-            {timeLeft <= 0 ? (
-              <><Square size={16} className="fill-current" /> <span className="text-sm">Complete</span></>
-            ) : isActive ? (
-              <><Pause size={16} className="fill-current" /> <span className="text-sm">Pause</span></>
-            ) : (
-              <><Play size={16} className="fill-current" /> <span className="text-sm">Start</span></>
-            )}
-          </button>
-  
-          {(isActive && (!isStrict || timeLeft <= 0) && timeLeft > 0) && (
-            <button
-              onClick={handleStop}
-              className="px-8 py-3 bg-white/5 hover:bg-red-500/20 text-white/80 hover:text-red-400 rounded-xl font-semibold transition-colors flex items-center gap-2 shadow-sm"
-              title="Stop and save session"
-            >
-               <Square size={16} className="fill-current" /> <span className="text-sm">Stop</span>
-            </button>
+          ) : (
+            <span className="text-[11px] text-slate-500 italic">Belum ada tugas aktif yang dipilih</span>
           )}
-
-          <button
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className="p-3.5 bg-white/5 hover:bg-white/10 text-white rounded-xl transition-colors shadow-sm opacity-60 hover:opacity-100"
-            title={soundEnabled ? "Mute sound" : "Enable sound"}
-          >
-            {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-          </button>
         </div>
+      )}
+      {timerMode !== 'focus' && <div className="h-6 mb-4"></div>}
+
+      {/* Control Buttons */}
+      <div className="flex items-center gap-4">
+        {/* Toggle Sound */}
+        <button
+          onClick={() => {
+            playBtnSound();
+            setSoundEnabled(!soundEnabled);
+          }}
+          className={`p-2.5 rounded-full border transition-all ${
+            soundEnabled
+              ? 'bg-slate-800/80 text-slate-300 border-slate-700/60 hover:bg-slate-700'
+              : 'bg-slate-950/60 text-slate-500 border-slate-900'
+          }`}
+          title={soundEnabled ? 'Matikan Suara Detak' : 'Aktifkan Suara Detak'}
+        >
+          {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+        </button>
+
+        {/* Start/Pause Play */}
+        <button
+          onClick={togglePlay}
+          className={`px-6 py-3 rounded-xl font-bold text-sm tracking-wide shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 text-white ${
+            isActive
+              ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/10'
+              : timerMode === 'focus'
+              ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-950/20'
+              : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-950/20'
+          }`}
+        >
+          {isActive ? (
+            <>
+              <Pause size={16} fill="white" />
+              <span>JEDA TIMER</span>
+            </>
+          ) : (
+            <>
+              <Play size={16} fill="white" />
+              <span>MULAI FOKUS</span>
+            </>
+          )}
+        </button>
+
+        {/* Reset Timer */}
+        <button
+          onClick={resetTimer}
+          className="p-2.5 rounded-full bg-slate-800/80 border border-slate-700/60 hover:bg-slate-700 text-slate-300 transition-all hover:scale-[1.05]"
+          title="Reset Sesi"
+        >
+          <RefreshCw size={16} />
+        </button>
+
+        {/* Skip Timer */}
+        <button
+          onClick={skipTimer}
+          className="p-2.5 rounded-full bg-slate-800/80 border border-slate-700/60 hover:bg-slate-700 text-slate-300 transition-all hover:scale-[1.05]"
+          title="Lewati Sesi"
+        >
+          <SkipForward size={16} />
+        </button>
       </div>
 
+      {/* PiP Wrapper Widget */}
+      <div className="mt-5 shrink-0">
+        <PipWrapper
+          secondsRemaining={secondsRemaining}
+          timerMode={timerMode}
+          isActive={isActive}
+          onTogglePlay={togglePlay}
+          onReset={resetTimer}
+        />
+      </div>
     </div>
   );
-}
-
+};
